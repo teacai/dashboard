@@ -1,0 +1,15 @@
+# Allowlist the build inputs; never send local databases, secrets, IDE state,
+# build outputs, node_modules, browser artifacts or Git history to the builder.
+**
+!Dockerfile
+!.dockerignore
+!LICENSE
+!gradlew
+!settings.gradle
+!build.gradle
+!gradle.lockfile
+!gradle/
+!gradle/wrapper/
+!gradle/wrapper/**
+!src/
+!src/**

@@ -22,3 +22,20 @@
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
+
+# Local build, IDE state and file-backed database (including backups)
+.gradle/
+build/
+node_modules/
+playwright-report/
+test-results/
+.idea/
+*.iml
+data/
+*.mv.db
+*.trace.db
+.env
+.DS_Store
+
+# The Gradle wrapper is part of the source distribution
+!gradle/wrapper/gradle-wrapper.jar

@@ -23,6 +23,36 @@ build/install/wiki/bin/wiki
 
 Or use `./gradlew distZip` to package it for another machine with JDK 25.
 
+### Docker deployment (default configuration)
+
+Build the deployable image from source (Docker/BuildKit required):
+
+```sh
+docker build --pull -t wiki:latest .
+```
+
+The multi-stage build uses Java 25, runs the JVM test suite, and copies only runtime JARs/resources into a JRE image. It does **not** activate a Micronaut profile: the application uses `application.yml` defaults, with the same environment-variable overrides described below. Node.js, Playwright, Gradle and application source are absent from the runtime image. `.dockerignore` excludes local databases, build artifacts, secrets and other unrelated files from the build context.
+
+Run it with a persistent named volume:
+
+```sh
+docker volume create wiki-data
+docker run -d --name wiki \
+  --restart unless-stopped \
+  --stop-timeout 30 \
+  --security-opt no-new-privileges:true \
+  --cap-drop ALL \
+  -p 127.0.0.1:8080:8080 \
+  --mount source=wiki-data,target=/app/data \
+  wiki:latest
+```
+
+Open <http://localhost:8080>. The default file-backed H2 database is `/app/data/wiki.mv.db`; the volume preserves pages when the container is replaced. Run only one application container per database volume. The image runs as **UID/GID 10001**, not root. Named volumes inherit the prepared data-directory ownership; if using a host bind mount, make that directory writable by UID/GID 10001 first. The application JARs remain root-owned and are not writable by the application user.
+
+The example binds only to the host's loopback interface. Put a trusted HTTPS reverse proxy in front for deployment. Pass runtime settings with `-e WIKI_NAME=...`, `-e WIKI_MASTER_PASSWORD`, and `-e WIKI_SECURE_COOKIES=true` as appropriate; do not bake passwords into the image. Keep secure cookies disabled for plain local HTTP. The container listens on 8080 by default; changing `WIKI_PORT` also requires changing the container side of the port mapping.
+
+Inspect logs with `docker logs -f wiki`; stop cleanly with `docker stop -t 30 wiki`. Java runs directly as PID 1 so termination signals reach Micronaut/H2. For memory tuning, pass JVM options through `JAVA_TOOL_OPTIONS` and size any container memory limit for the configured page limit; 100 MiB Markdown processing is not a small-memory workload (see deployment notes below).
+
 ### Password modes
 
 Without a master password (unset, empty, or whitespace-only configuration):
