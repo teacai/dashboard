@@ -2,6 +2,7 @@ package com.teacai.wiki;
 
 import org.jsoup.Jsoup;
 
+import java.io.ByteArrayOutputStream;
 import java.net.CookieManager;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -9,6 +10,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -18,8 +20,11 @@ final class HttpTestSupport implements AutoCloseable {
     private final HttpClient client = HttpClient.newBuilder().cookieHandler(new CookieManager()).build();
     HttpTestSupport(URI base) { this.base = base; }
 
-    HttpResponse<String> get(String path) throws Exception {
-        return client.send(HttpRequest.newBuilder(URI.create(base + path)).GET().build(), HttpResponse.BodyHandlers.ofString());
+    HttpResponse<String> get(String path) throws Exception { return get(path, "*/*"); }
+
+    HttpResponse<String> get(String path, String accept) throws Exception {
+        return client.send(HttpRequest.newBuilder(URI.create(base + path)).header("Accept", accept)
+                .GET().build(), HttpResponse.BodyHandlers.ofString());
     }
 
     Map<String, String> editor(String path) throws Exception {
@@ -45,6 +50,30 @@ final class HttpTestSupport implements AutoCloseable {
                 .header("Accept", "text/html,application/xhtml+xml")
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    record UploadPart(String fieldName, String filename, byte[] bytes) {}
+
+    HttpResponse<String> upload(Map<String, String> fields, List<UploadPart> files) throws Exception {
+        String boundary = "wiki-boundary-" + java.util.UUID.randomUUID();
+        var body = new ByteArrayOutputStream();
+        for (var entry : fields.entrySet()) {
+            body.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + entry.getKey()
+                    + "\"\r\n\r\n" + entry.getValue() + "\r\n").getBytes(StandardCharsets.UTF_8));
+        }
+        for (var file : files) {
+            body.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + file.fieldName()
+                    + "\"; filename=\"" + file.filename() + "\"\r\nContent-Type: application/octet-stream\r\n\r\n")
+                    .getBytes(StandardCharsets.UTF_8));
+            body.write(file.bytes());
+            body.write("\r\n".getBytes(StandardCharsets.UTF_8));
+        }
+        body.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        return client.send(HttpRequest.newBuilder(base.resolve("/_files/upload"))
+                .header("Origin", base.getScheme() + "://" + base.getRawAuthority())
+                .header("Sec-Fetch-Site", "same-origin")
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body.toByteArray())).build(), HttpResponse.BodyHandlers.ofString());
     }
 
     private String encode(String text) { return URLEncoder.encode(text, StandardCharsets.UTF_8); }

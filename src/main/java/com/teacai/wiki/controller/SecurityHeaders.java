@@ -8,8 +8,10 @@ import io.micronaut.http.annotation.ServerFilter;
 public class SecurityHeaders {
     @ResponseFilter
     public void headers(MutableHttpResponse<?> response) {
-        response.header("Content-Security-Policy", "default-src 'none'; style-src 'self'; "
-                + "img-src 'self' https: http:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+        if (!response.getHeaders().contains("Content-Security-Policy")) {
+            response.header("Content-Security-Policy", "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; "
+                    + "img-src 'self' https: http:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+        }
         response.header("X-Content-Type-Options", "nosniff");
         response.header("X-Frame-Options", "DENY");
         // no-referrer makes browser form POSTs send Origin: null, which Micronaut rejects as cross-origin.

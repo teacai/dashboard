@@ -37,9 +37,10 @@ public final class PagePaths {
         for (String segment : result.split("/", -1)) {
             if (segment.equals(".") || segment.equals("..")) throw invalid();
         }
-        // This namespace is reserved for application-owned assets.
-        if (result.equals("/_assets") || result.startsWith("/_assets/")) {
-            throw new HttpStatusException(HttpStatus.NOT_FOUND, "Asset not found");
+        // Application-owned namespaces must never become user pages.
+        if (result.equals("/_assets") || result.startsWith("/_assets/")
+                || result.equals("/_files") || result.startsWith("/_files/")) {
+            throw new HttpStatusException(HttpStatus.NOT_FOUND, "Resource not found");
         }
         return result;
     }

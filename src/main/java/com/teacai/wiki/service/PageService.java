@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
 
 @Singleton
 public class PageService {
@@ -41,6 +42,15 @@ public class PageService {
     }
 
     public void savePage(String path, String content, String password, long expectedVersion) {
+        Page updated = preparePage(path, content, password, expectedVersion);
+        synchronized (this) {
+            if (!metrics.timer("wiki.database.write").record(() -> repository.save(updated, expectedVersion))) conflict();
+        }
+        saved(updated);
+    }
+
+    /** Authenticate and validate before staging files; recheck the version during the atomic write. */
+    public Page preparePage(String path, String content, String password, long expectedVersion) {
         if (content == null) throw new HttpStatusException(HttpStatus.BAD_REQUEST, "Missing page content");
         if (content.length() > properties.getMaxPageSize()
                 || content.getBytes(StandardCharsets.UTF_8).length > properties.getMaxPageSize()) {
@@ -65,12 +75,18 @@ public class PageService {
         if (masterHash == null && hash == null && password != null && !password.isEmpty()) {
             hash = passwords.hashPassword(password);
         }
-        Page updated = new Page(path, content, hash, expectedVersion);
-        boolean saved = metrics.timer("wiki.database.write").record(() -> repository.save(updated, expectedVersion));
-        if (!saved) conflict();
+        return new Page(path, content, hash, expectedVersion);
+    }
+
+    /** Called under this service's monitor, with the file metadata in the same DB transaction. */
+    public void persist(Connection connection, Page prepared) {
+        if (!repository.save(connection, prepared, prepared.version())) conflict();
+    }
+
+    public void saved(Page page) {
         metrics.counter("wiki.saves", "result", "success").increment();
-        LOG.info("Page saved: version={}, characters={}, protected={}", expectedVersion + 1,
-                content.length(), masterHash != null || hash != null);
+        LOG.info("Page saved: version={}, characters={}, protected={}", page.version() + 1,
+                page.content().length(), masterHash != null || page.isProtected());
     }
 
     private void conflict() {

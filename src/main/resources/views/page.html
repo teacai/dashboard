@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title th:text="${title}">Wiki</title>
   <link rel="stylesheet" href="/_assets/style.css">
+  <script th:if="${editor}" src="/_assets/editor.js" defer></script>
 </head>
 <body th:classappend="${editor} ? 'editing' : ''">
   <header class="navbar">
@@ -17,16 +18,50 @@
         <input form="editor" type="password" name="password" maxlength="1024" th:placeholder="${passwordHint}"
                th:aria-label="${passwordHint}" autocomplete="off" spellcheck="false">
       </label>
-      <button form="editor" type="submit" class="icon-button" aria-label="Save page" title="Save page">
+      <button type="button" class="icon-button upload-button" popovertarget="upload-menu" aria-label="Upload files" title="Upload files or a folder">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 16v5h16v-5"/></svg>
+      </button>
+      <button type="button" id="manage-files" class="icon-button files-button" aria-label="Manage files" title="Manage files">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l2 3h10v13H3ZM3 7h18"/></svg>
+      </button>
+      <button form="editor" type="submit" class="icon-button save-button" aria-label="Save page" title="Save page">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12l4 4v12a2 2 0 0 1-2 2ZM7 3v6h9V3M7 21v-8h10v8"/></svg>
       </button>
     </div>
   </header>
+  <div th:if="${editor}" id="upload-menu" popover class="upload-menu">
+    <button type="button" id="choose-files">Upload files</button>
+    <button type="button" id="choose-folder">Upload folder</button>
+    <p>Uploads save your draft and append file links. Matching files are replaced.</p>
+  </div>
+  <input th:if="${editor}" id="file-picker" type="file" multiple hidden>
+  <input th:if="${editor}" id="folder-picker" type="file" webkitdirectory multiple hidden>
+  <dialog th:if="${editor}" id="files-dialog" aria-labelledby="files-title">
+    <div class="dialog-header">
+      <h2 id="files-title">Page files</h2>
+      <button type="button" id="close-files" class="icon-button" aria-label="Close files" title="Close files">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg>
+      </button>
+    </div>
+    <p>Files are public. Deleting a file does not remove its Markdown links or save your draft.</p>
+    <p th:if="${#lists.isEmpty(files)}">No files uploaded to this page.</p>
+    <ul class="file-list" th:unless="${#lists.isEmpty(files)}">
+      <li th:each="file : ${files}">
+        <a th:href="${file.url()}" th:text="${file.relativePath()}">File</a>
+        <small th:text="${file.sizeBytes()} + ' bytes'"></small>
+        <button form="editor" type="submit" name="fileId" th:value="${file.publicId()}" formaction="/_files/delete"
+                class="icon-button delete-file" th:aria-label="'Delete ' + ${file.relativePath()}" title="Delete file">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg>
+        </button>
+      </li>
+    </ul>
+  </dialog>
   <!-- Only sanitizer output is inserted without escaping. All editor content and attributes are escaped. -->
   <main th:unless="${editor}" class="page-content" th:utext="${html}"></main>
   <form th:if="${editor}" id="editor" class="editor-form" method="post" th:action="${path}" accept-charset="UTF-8">
     <p th:if="${error}" class="error" role="alert" th:text="${error}"></p>
     <input type="hidden" name="csrf" th:value="${csrf}">
+    <input type="hidden" name="page" th:value="${pagePath}">
     <input type="hidden" name="version" th:value="${version}">
     <label class="sr-only" for="content">Page Markdown</label>
     <!-- The literal first LF compensates for HTML textarea parsing; do not indent the inline content. -->

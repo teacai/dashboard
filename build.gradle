@@ -17,6 +17,8 @@ micronaut {
 
 dependencies {
     implementation 'io.micronaut:micronaut-http-server-netty'
+    // Only used to bridge Micronaut's multipart publisher on a blocking/virtual-thread route.
+    implementation 'io.projectreactor:reactor-core'
     implementation 'io.micronaut.serde:micronaut-serde-jackson'
     implementation 'io.micronaut.sql:micronaut-jdbc-hikari'
     implementation 'io.micronaut.views:micronaut-views-thymeleaf'

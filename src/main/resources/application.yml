@@ -3,13 +3,18 @@ micronaut:
     name: wiki
   server:
     port: ${WIKI_PORT:8080}
-    # A form can expand every UTF-8 byte to %XX. Includes room for CSRF/password fields.
-    max-request-size: ${WIKI_MAX_REQUEST_SIZE:314638336}
-    max-request-buffer-size: ${WIKI_MAX_REQUEST_SIZE:314638336}
+    # 2 GiB of files + 100 MiB Markdown + 1 MiB multipart metadata/overhead.
+    max-request-size: ${WIKI_MAX_REQUEST_SIZE:2253389824}
+    # Do not buffer the entire upload in memory. URL-encoded Markdown can expand to %XX.
+    max-request-buffer-size: ${WIKI_MAX_BUFFER_SIZE:314638336}
     netty:
       max-initial-line-length: 16384
-      form-max-fields: 8
-      form-max-buffered-bytes: ${WIKI_MAX_REQUEST_SIZE:314638336}
+      form-max-fields: 1024
+      form-max-buffered-bytes: ${WIKI_MAX_BUFFER_SIZE:314638336}
+    multipart:
+      enabled: true
+      disk: true
+      max-file-size: ${WIKI_MAX_UPLOAD_SIZE:2147483648}
   metrics:
     enabled: true
     export:
@@ -36,6 +41,8 @@ flyway:
 wiki:
   name: ${WIKI_NAME:Wiki}
   max-page-size: ${WIKI_MAX_PAGE_SIZE:104857600}
+  files-directory: ${WIKI_FILES_DIRECTORY:./data/files}
+  max-upload-size: ${WIKI_MAX_UPLOAD_SIZE:2147483648}
   master-password: ${WIKI_MASTER_PASSWORD:}
   # Enable when HTTPS terminates at a reverse proxy.
   secure-cookies: ${WIKI_SECURE_COOKIES:false}

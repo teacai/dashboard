@@ -90,7 +90,7 @@ class WikiHttpTest {
         assertEquals(403, rejected.statusCode());
         var doc = Jsoup.parse(rejected.body());
         assertEquals(form.get("content"), doc.selectFirst("textarea").val());
-        assertTrue(doc.select("script").isEmpty());
+        assertTrue(doc.select("script:not([src='/_assets/editor.js'])").isEmpty());
         assertEquals("protected", repository.findByPath(path).orElseThrow().content());
         form.put("password", "wrong");
         assertEquals(403, http.post(path, form).statusCode());

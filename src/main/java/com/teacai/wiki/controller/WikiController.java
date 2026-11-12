@@ -3,6 +3,7 @@ package com.teacai.wiki.controller;
 import com.teacai.wiki.config.WikiProperties;
 import com.teacai.wiki.model.Page;
 import com.teacai.wiki.service.CsrfService;
+import com.teacai.wiki.service.FileService;
 import com.teacai.wiki.service.MarkdownRenderer;
 import com.teacai.wiki.service.PageService;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -25,14 +26,16 @@ public class WikiController {
     private final WikiProperties properties;
     private final CsrfService csrf;
     private final MeterRegistry metrics;
+    private final FileService files;
 
     public WikiController(PageService pages, MarkdownRenderer markdown, WikiProperties properties,
-                          CsrfService csrf, MeterRegistry metrics) {
+                          CsrfService csrf, MeterRegistry metrics, FileService files) {
         this.pages = pages;
         this.markdown = markdown;
         this.properties = properties;
         this.csrf = csrf;
         this.metrics = metrics;
+        this.files = files;
     }
 
     @Get(uris = {"/", "/{+path}"}, produces = MediaType.TEXT_HTML)
@@ -71,11 +74,12 @@ public class WikiController {
         return HttpResponse.seeOther(URI.create(PagePaths.localUrl(path)));
     }
 
-    private HttpResponse<?> editor(HttpRequest<?> request, Page page, String error, HttpStatus status) {
+    HttpResponse<?> editor(HttpRequest<?> request, Page page, String error, HttpStatus status) {
         String token = csrf.token(request);
         var model = model(page, true);
         model.put("csrf", token);
         model.put("error", error);
+        model.put("files", files.list(page.path()));
         model.put("passwordHint", pages.usesMasterPassword() ? "Master password"
                 : error != null ? "Password" : page.isProtected() ? "Page password" : "Set password (optional)");
         return HttpResponse.status(status).body(model).cookie(csrf.cookie(request, token));
@@ -86,6 +90,7 @@ public class WikiController {
         model.put("appName", properties.getName());
         model.put("title", page.path().equals("/") ? properties.getName() : page.path() + " — " + properties.getName());
         model.put("path", PagePaths.localUrl(page.path()));
+        model.put("pagePath", page.path());
         model.put("editorUrl", PagePaths.localUrl(PagePaths.editor(page.path())));
         model.put("editor", editor);
         model.put("content", page.content());

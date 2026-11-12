@@ -8,6 +8,21 @@ public class WikiProperties {
     private long maxPageSize = 104857600;
     private String masterPassword = "";
     private boolean secureCookies;
+    private String filesDirectory = "./data/files";
+    private long maxUploadSize = 2L * 1024 * 1024 * 1024;
+
+    public String getFilesDirectory() { return filesDirectory; }
+    public void setFilesDirectory(String filesDirectory) {
+        if (filesDirectory == null || filesDirectory.isBlank()) throw new IllegalArgumentException("wiki.files-directory must not be blank");
+        this.filesDirectory = filesDirectory;
+    }
+    public long getMaxUploadSize() { return maxUploadSize; }
+    public void setMaxUploadSize(long size) {
+        if (size < 1 || size > 2L * 1024 * 1024 * 1024) {
+            throw new IllegalArgumentException("wiki.max-upload-size must be between 1 byte and 2 GiB");
+        }
+        maxUploadSize = size;
+    }
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }

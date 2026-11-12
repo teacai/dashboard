@@ -1,6 +1,8 @@
 # Wiki
 
-A small, server-rendered Markdown wiki. Visit any page path; missing pages, including `/`, display a blank page. Click the pencil to edit, then the floppy disk to save. No accounts, JavaScript, frontend build, external database, or H2 console.
+A small, server-rendered Markdown wiki. Visit any page path; missing pages, including `/`, display a blank page. Click the pencil to edit, then the floppy disk to save. No accounts, frontend build, external database, or H2 console. Reading and ordinary Markdown editing work without JavaScript; a small local editor script enables file/folder pickers and file management.
+
+Pages adapt to narrow and landscape screens. Rendered Markdown wraps long text, scales images, and scrolls wide code blocks/tables locally rather than widening the page. The editor stays within the viewport with its controls visible; only the textarea scrolls as the draft grows. Long application names are truncated in the navbar.
 
 ## Run
 
@@ -70,7 +72,7 @@ WIKI_MASTER_PASSWORD='choose-a-long-random-secret' ./gradlew run
 
 When the configured master password is non-blank, every save requires that exact master password, including new, blank, public, and previously protected pages. The editor's one password field authenticates the save; it does not set a per-page password in this mode. Existing page hashes are retained, so removing master mode restores the previous per-page protection. Keep production secrets in your service manager's protected environment, not source control or shell history.
 
-**Passwords protect writes only. All page contents and editors are publicly readable.** There is no password recovery UI, revision history, delete endpoint, or page-password rotation feature. A configured master password can authorize edits when a page password is lost.
+**Passwords protect writes only. All pages, editors, file lists, and uploaded files are publicly readable.** Uploads and file deletion use the same edit-password rules. There is no password recovery UI, revision history, page deletion, or page-password rotation feature. A configured master password can authorize edits when a page password is lost.
 
 ## Configuration
 
@@ -84,10 +86,30 @@ See [`src/main/resources/application.yml`](src/main/resources/application.yml). 
 | `WIKI_DB_PASSWORD` | empty | H2 connection password; not a page password or file-encryption key |
 | `WIKI_MASTER_PASSWORD` | empty | Unset/blank enables per-page mode; non-blank overrides page passwords for all saves |
 | `WIKI_MAX_PAGE_SIZE` | `104857600` | Maximum **decoded Markdown UTF-8 bytes** (100 MiB) |
-| `WIKI_MAX_REQUEST_SIZE` | `314638336` | Transport/form buffering limit: 3 × 100 MiB plus 64 KiB |
+| `WIKI_FILES_DIRECTORY` | `./data/files` | Persistent attachment root, relative to the process working directory |
+| `WIKI_MAX_UPLOAD_SIZE` | `2147483648` | Maximum bytes per file **and** sum of file bytes per upload; may be lowered, never raised above 2 GiB |
+| `WIKI_MAX_REQUEST_SIZE` | `2253389824` | Transport limit: 2 GiB files + 100 MiB Markdown + 1 MiB multipart overhead |
+| `WIKI_MAX_BUFFER_SIZE` | `314638336` | In-memory/form-attribute buffering cap; not the streamed file-data limit |
 | `WIKI_SECURE_COOKIES` | `false` | Set `true` behind an HTTPS-terminating proxy; direct HTTPS also sets Secure automatically |
 
-The page limit is checked independently of `Content-Length`, after form decoding. Over-limit pages return **413**, never save partially, and are not echoed in an error response. A URL-encoded UTF-8 byte can occupy three wire bytes (`%XX`); if increasing the page limit, increase the transport limit to at least `3 × page limit + 65536` and adjust the reverse proxy's limit too. These are byte counts, not character counts.
+The page limit is checked independently of `Content-Length`, after form decoding, and includes appended attachment links. Over-limit ordinary saves return **413** without saving. Upload errors handled after form parsing preserve the editor draft; parser/transport failures may not. A URL-encoded UTF-8 byte can occupy three wire bytes (`%XX`); if increasing the page limit, increase the buffer cap to at least `3 × page limit + 65536`, and the transport limit to at least the larger of that value and `max upload size + page limit + multipart overhead`. Adjust reverse-proxy limits too. These are byte counts, not character counts.
+
+### File uploads and management
+
+In the editor, enter the edit password if required, click the **upload icon**, and choose **Upload files** or **Upload folder**. Browsers provide separate native pickers for files and directories. Selecting files immediately submits a multipart upload. A successful upload saves the current Markdown draft, appends a bullet link for every uploaded file, and refreshes the editor in place with the new page version and file list. The entered password stays filled in for subsequent uploads or saves. It remains only in the current password field: the server does not echo it, and it is never placed in URLs, cookies, local storage, or session storage. Reloading or navigating to a fresh editor clears it. Editing controls are temporarily locked while an upload is in progress so newer changes cannot be lost.
+
+- Files keep their original names. `/notes/project` plus `report.pdf` becomes `data/files/notes/project/report.pdf` with default settings.
+- Selecting a folder `photos` containing `trip/image.jpg` stores `data/files/notes/project/photos/trip/image.jpg`. The selected top-level folder is included; empty directories are not uploaded.
+- Root-page uploads go directly under the configured attachment root. Canonical percent-encoded page segments stay encoded on disk (`/a%2Fb` is not `/a/b`); empty/repeated/trailing page-path segments use a reserved `%00` directory to remain distinct.
+- Existing files at the same relative path **owned by the same page** are replaced. Their public download URLs remain unchanged. Cross-page physical path collisions, duplicate paths within a batch, and collisions with unmanaged files are rejected rather than overwritten.
+- Click the **folder icon** to list this page's files, download them, or delete individual files. Deletion requires the edit password, CSRF token, and current page version. It preserves the open draft without publishing it and does not remove Markdown links; remove stale links manually. Deletion advances the page version to invalidate older editors/uploads.
+- Each file and the combined file data in a request are limited to **2 GiB (2,147,483,648 bytes)**. There are at most 1,000 files per batch and 1 MiB of manifest metadata. The page-content limit applies separately. Files are spooled to disk, then copied in bounded chunks; no multi-gigabyte byte arrays are created.
+- Relative filenames are limited to 4,096 characters and individual path segments to 255 UTF-8 bytes, also subject to the host filesystem's limits. Absolute paths, dot segments, empty segments, backslashes, colons, control characters, and symlink targets/ancestors are rejected. Validated original filenames are never silently renamed.
+- Downloads use stable UUIDv7 URLs, `application/octet-stream`, `Content-Disposition: attachment` with the original filename, `nosniff`, and a sandbox CSP. Uploaded HTML/SVG/scripts are never served as active same-origin documents.
+
+Page content/version and file ownership metadata commit in one database transaction. Files are staged before a short serialized installation step; replacements/deletions have temporary backups and are rolled back on handled filesystem/DB failures. Authorization and version checks precede installation, and a version change during staging rejects the upload. Bulk file copying does not hold the page-write monitor. This is **not a crash-atomic transaction across the database and filesystem**: after a process/machine failure during installation, inspect sibling `.wiki-upload-*` staging directories for recoverable backups before removing them. Keep the storage directory private to the application, and do not edit files behind its back.
+
+Provide sufficient temporary-disk capacity: Micronaut's multipart spool uses the JVM temporary directory (or `micronaut.server.multipart.location`); staging/backups use a sibling temporary directory beside the attachment root. Account for two concurrent requests, staged copies, replacements, and backups. Invalid credentials are checked before permanent installation, but the HTTP body may already have been spooled. Apply gateway authentication/rate limits and disk quotas for untrusted deployments.
 
 ### URL behavior
 
@@ -95,7 +117,8 @@ The page limit is checked independently of `Content-Length`, after form decoding
 - `GET /anything/nested/editor` displays the full-page editor.
 - `POST /anything/nested` saves a URL-encoded form and returns **303** to the page (Post/Redirect/Get).
 - `/editor` edits `/`; posting to `/` saves the root page.
-- The final `/editor` suffix and `/_assets` namespace are reserved. Paths ending in `/editor` cannot themselves be content pages.
+- `POST /_files/upload` accepts indexed multipart files and a relative-path manifest; `POST /_files/delete` deletes an owned file; `GET /_files/{uuid}` downloads a file.
+- The final `/editor` suffix and `/_assets` / `/_files` namespaces are reserved. Paths ending in `/editor` cannot themselves be content pages.
 - Slashes inside paths, repeated slashes, trailing slashes, Unicode, spaces, and escaped reserved characters are supported. `/a`, `/a/`, `/a/b`, and `/a%2Fb` are distinct pages. Literal reserved delimiters must be percent-encoded where appropriate: `%23` for `#`, `%3F` for `?`.
 - Percent escape hex is canonicalized to uppercase; escaped unreserved characters are decoded. For example `/a%7Eb` and `/a~b` refer to the same page. Encoded slashes are **not** decoded into path separators.
 - Queries do not identify a page; fragments never reach the server. Dot segments, control characters, and backslashes are rejected. Browsers can normalize dot segments before sending a request.
@@ -118,6 +141,8 @@ Key code:
 - [`PageService`](src/main/java/com/teacai/wiki/service/PageService.java): write policy, authentication and limits.
 - [`PageRepository`](src/main/java/com/teacai/wiki/repository/PageRepository.java): parameterized JDBC and atomic version checks.
 - [`page.html`](src/main/resources/views/page.html): shared page/editor UI.
+- [`FileController`](src/main/java/com/teacai/wiki/controller/FileController.java), [`FileService`](src/main/java/com/teacai/wiki/service/FileService.java), [`AttachmentStorage`](src/main/java/com/teacai/wiki/service/AttachmentStorage.java): multipart handling, authorization/ownership orchestration, and bounded filesystem operations.
+- [`V3__page_files.sql`](src/main/resources/db/migration/V3__page_files.sql): indexed file ownership and stable download identifiers.
 
 ### Security boundaries
 
@@ -139,7 +164,7 @@ The installed runtime is approximately **23 MiB** of application/dependency JARs
 
 A separate packaged-app smoke test verified: 100 MiB + 1 byte returns 413, exactly 100 MiB saves with 303, and that page renders with 200. That test used a simple single-line page with `JAVA_OPTS='-Xms32m -Xmx1536m -XX:MaxDirectMemorySize=768m'`; process RSS reached about 2.5 GiB. Those settings are an observed test configuration, **not a guarantee** for arbitrary 100 MiB Markdown or two simultaneous large requests. Too-small direct-memory limits can fail during form decoding before the application can check the page size.
 
-Run one JVM per database file on a local persistent disk (not a shared network filesystem). Protect the data directory with OS permissions; page passwords do **not** encrypt content at rest. For a straightforward consistent backup, stop the app cleanly and copy `wiki.mv.db`; do not copy a live file without using H2's supported backup mechanism. Back up before upgrading. Flyway runs on startup and validates migration checksums; V1 is preserved and V2 upgrades the scaffold's schema. Legacy scaffold SHA-256 password hashes are deliberately not accepted as PBKDF2 hashes; use master mode to authorize writes to such pages if needed.
+Run one JVM per database file on a local persistent disk (not a shared network filesystem). Protect the data directory with OS permissions; page passwords do **not** encrypt content at rest. For a straightforward consistent backup, stop the app cleanly and copy **both** `wiki.mv.db` and the configured files directory together; metadata and attachments must be restored as a pair. Include any staging directories when investigating an interrupted installation. Do not copy a live database without using H2's supported backup mechanism. Back up before upgrading. Flyway runs on startup and validates migration checksums; V1 is preserved, V2 upgrades the scaffold's schema, and V3 adds file ownership metadata. Legacy scaffold SHA-256 password hashes are deliberately not accepted as PBKDF2 hashes; use master mode to authorize writes to such pages if needed.
 
 ### Observability
 
@@ -151,6 +176,7 @@ Micrometer publishes metrics to the **local JVM's JMX MBean server** (domain `me
 - `wiki.markdown.render` timer
 - `wiki.saves` counters, tagged by bounded result values
 - `wiki.work.active` and `wiki.requests.rejected`
+- `wiki.files.upload` timer, `wiki.files.uploaded`, `wiki.files.bytes`, `wiki.files.deleted`, and `wiki.files.failures` counters
 - Micronaut HTTP and JVM metrics
 
 ### Verification
@@ -171,6 +197,10 @@ Tests cover root/blank pages; nested, encoded, repeated- and trailing-slash path
 3. Enter Markdown with a heading, bold/emphasized text, inline code and a list; leave the password empty.
 4. Click the floppy disk (`Save page`), verify the real form POST returns 303, and verify navigation back to the original path.
 5. Assert the rendered HTML elements, absence of the editor, and persistence after a full reload.
+
+[`tests/e2e/responsive-pages.spec.cjs`](tests/e2e/responsive-pages.spec.cjs) also checks eight viewport sizes (320×240 through 1280×720), including the mobile layout breakpoint. It covers long names/passwords, growing drafts, textarea-only scrolling, server-rendered conflict errors, and wide Markdown text, code, tables and images.
+
+[`tests/e2e/files.spec.cjs`](tests/e2e/files.spec.cjs) exercises file and directory selection, saved drafts and appended links, Unicode/original filenames, replacements with stable download URLs, actual browser downloads, password retention across uploads and a subsequent save without browser storage, password failures, and deletion that preserves unsaved edits. JVM tests additionally cover exact/over-limit file and aggregate byte counts using lowered limits, 64-bit size guards without allocating 2 GiB, traversal/symlink rejection, cross-page ownership, stale writes during staging, and rollback after a partial batch failure.
 
 Requires Node.js 22+ and JDK 25. Node/Playwright are test tooling only, not application runtime dependencies:
 

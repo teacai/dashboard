@@ -4,6 +4,7 @@ import com.teacai.wiki.model.Page;
 import jakarta.inject.Singleton;
 
 import javax.sql.DataSource;
+import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Optional;
 
@@ -29,11 +30,19 @@ public class PageRepository {
 
     /** Authorization uses the version subsequently checked by this atomic write. */
     public boolean save(Page page, long expectedVersion) {
+        try (var connection = dataSource.getConnection()) {
+            return save(connection, page, expectedVersion);
+        } catch (SQLException e) {
+            throw new IllegalStateException("Unable to save page", e);
+        }
+    }
+
+    public boolean save(Connection connection, Page page, long expectedVersion) {
         String sql = expectedVersion < 0
                 ? "INSERT INTO wiki_pages(path, content, password_hash, version) VALUES (?, ?, ?, 0)"
                 : "UPDATE wiki_pages SET content = ?, password_hash = ?, version = version + 1, "
                     + "updated_at = CURRENT_TIMESTAMP WHERE path = ? AND version = ?";
-        try (var connection = dataSource.getConnection(); var statement = connection.prepareStatement(sql)) {
+        try (var statement = connection.prepareStatement(sql)) {
             if (expectedVersion < 0) {
                 statement.setString(1, page.path());
                 statement.setString(2, page.content());
