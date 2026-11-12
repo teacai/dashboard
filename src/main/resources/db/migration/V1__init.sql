@@ -1,0 +1,10 @@
+-- Wiki pages table
+CREATE TABLE wiki_pages (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    path VARCHAR(2048) NOT NULL UNIQUE,
+    content LONGVARCHAR,
+    password_hash VARCHAR(512),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    protected_ BOOLEAN DEFAULT FALSE
+);

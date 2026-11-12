@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title th:text="${title}">Wiki</title>
+  <link rel="stylesheet" href="/_assets/style.css">
+</head>
+<body th:classappend="${editor} ? 'editing' : ''">
+  <header class="navbar">
+    <a class="brand" href="/" th:text="${appName}">Wiki</a>
+    <a th:unless="${editor}" class="icon-button" th:href="${editorUrl}" aria-label="Edit page" title="Edit page">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 3 5 5M3 21l5-1L21 7a3.5 3.5 0 0 0-5-5L3 15z"/></svg>
+    </a>
+    <div th:if="${editor}" class="editor-actions">
+      <label class="password"><span class="sr-only" th:text="${passwordHint}">Password</span>
+        <input form="editor" type="password" name="password" maxlength="1024" th:placeholder="${passwordHint}"
+               th:aria-label="${passwordHint}" autocomplete="off" spellcheck="false">
+      </label>
+      <button form="editor" type="submit" class="icon-button" aria-label="Save page" title="Save page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12l4 4v12a2 2 0 0 1-2 2ZM7 3v6h9V3M7 21v-8h10v8"/></svg>
+      </button>
+    </div>
+  </header>
+  <!-- Only sanitizer output is inserted without escaping. All editor content and attributes are escaped. -->
+  <main th:unless="${editor}" class="page-content" th:utext="${html}"></main>
+  <form th:if="${editor}" id="editor" class="editor-form" method="post" th:action="${path}" accept-charset="UTF-8">
+    <p th:if="${error}" class="error" role="alert" th:text="${error}"></p>
+    <input type="hidden" name="csrf" th:value="${csrf}">
+    <input type="hidden" name="version" th:value="${version}">
+    <label class="sr-only" for="content">Page Markdown</label>
+    <!-- The literal first LF compensates for HTML textarea parsing; do not indent the inline content. -->
+    <textarea id="content" name="content" aria-label="Page Markdown" spellcheck="false"
+              placeholder="Write Markdown…" th:inline="text">
+[[${content}]]</textarea>
+  </form>
+</body>
+</html>

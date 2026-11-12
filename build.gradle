@@ -1,0 +1,42 @@
+plugins {
+    id 'java'
+    id 'io.micronaut.application' version '5.0.2'
+}
+
+repositories { mavenCentral() }
+
+micronaut {
+    version '5.2.6'
+    runtime 'netty'
+    testRuntime 'junit5'
+    processing {
+        incremental true
+        annotations 'com.teacai.wiki.*'
+    }
+}
+
+dependencies {
+    implementation 'io.micronaut:micronaut-http-server-netty'
+    implementation 'io.micronaut.serde:micronaut-serde-jackson'
+    implementation 'io.micronaut.sql:micronaut-jdbc-hikari'
+    implementation 'io.micronaut.views:micronaut-views-thymeleaf'
+    implementation 'io.micronaut.micrometer:micronaut-micrometer-registry-jmx'
+    implementation 'org.commonmark:commonmark:0.32.0'
+    implementation 'org.commonmark:commonmark-ext-gfm-tables:0.32.0'
+    implementation 'org.commonmark:commonmark-ext-gfm-strikethrough:0.32.0'
+    implementation 'org.commonmark:commonmark-ext-autolink:0.32.0'
+    implementation 'org.jsoup:jsoup:1.24.1'
+    runtimeOnly 'io.micronaut.flyway:micronaut-flyway'
+    runtimeOnly 'org.flywaydb:flyway-core:13.12.1'
+    runtimeOnly 'com.h2database:h2:2.5.252'
+    runtimeOnly 'ch.qos.logback:logback-classic:1.6.6'
+    runtimeOnly 'org.yaml:snakeyaml:2.7'
+    testImplementation 'io.micronaut.test:micronaut-test-junit5'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+java { toolchain { languageVersion = JavaLanguageVersion.of(25) } }
+application { mainClass = 'com.teacai.wiki.WikiApplication' }
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+test { useJUnitPlatform() }
+dependencyLocking { lockAllConfigurations() }
