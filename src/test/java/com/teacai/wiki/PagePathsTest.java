@@ -17,8 +17,9 @@ class PagePathsTest {
         assertEquals("/.//evil.example", PagePaths.localUrl("//evil.example"));
     }
 
-    @Test void rejectsControlCharactersDotSegmentsAndAssetNamespace() {
-        for (String path : new String[]{"/a/%00", "/a/%0A", "/a/%7f", "/a/%2e%2e", "/_assets/anything"}) {
+    @Test void rejectsControlCharactersDotSegmentsAndApplicationNamespaces() {
+        for (String path : new String[]{"/a/%00", "/a/%0A", "/a/%7f", "/a/%2e%2e", "/_assets/anything",
+                "/_admin", "/_admin/editor", "/_backup", "/_backup/editor", "/_%62ackup"}) {
             assertThrows(HttpStatusException.class, () -> PagePaths.canonical(URI.create(path)));
         }
     }

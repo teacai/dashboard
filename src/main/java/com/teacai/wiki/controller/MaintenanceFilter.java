@@ -26,7 +26,8 @@ public class MaintenanceFilter implements ApplicationEventListener<HttpRequestTe
     @Nullable
     public HttpResponse<?> admit(HttpRequest<?> request) {
         // Restore acquires the exclusive lease itself, after the uploaded ZIP has been staged/validated.
-        if (request.getMethod() == HttpMethod.POST && request.getPath().equals("/_backup")) return null;
+        if (request.getMethod() == HttpMethod.POST
+                && (request.getPath().equals("/_backup") || request.getPath().equals("/_admin/restore"))) return null;
         long stamp = maintenance.admitRequest();
         if (stamp == 0) return HttpResponse.status(HttpStatus.SERVICE_UNAVAILABLE).header("Retry-After", "1");
         request.setAttribute(STAMP, new AtomicLong(stamp));

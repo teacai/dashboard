@@ -36,6 +36,16 @@ textarea:focus-visible { outline-offset: -2px; }
 .file-list a { grid-column: 1; }
 .file-list small { grid-column: 1; }
 .file-list .delete-file { grid-column: 2; grid-row: 1 / 3; }
+.admin-content { max-width: 48rem; }
+.admin-panel { margin: 1.5rem 0; padding: 1rem; border: 1px solid var(--line); border-radius: .5rem; }
+.admin-panel h2 { margin-top: 0; }
+.admin-button { display: inline-block; padding: .6rem 1rem; border: 1px solid var(--line); border-radius: .3rem; background: var(--muted); color: inherit; font: inherit; text-decoration: none; cursor: pointer; }
+.admin-restore { display: grid; gap: 1rem; }
+.admin-restore input[type=file] { width: 100%; min-width: 0; color: inherit; font: inherit; }
+.admin-restore .admin-button { justify-self: start; }
+.admin-confirm { display: flex; align-items: baseline; gap: .5rem; }
+.admin-notice { padding: 1rem; border: 1px solid var(--line); border-radius: .3rem; background: var(--muted); }
+.admin-notice.error { background: light-dark(#fff2ed, #44251e); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 @media (max-width: 480px) {
   .editing .navbar { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, 2.5rem); }

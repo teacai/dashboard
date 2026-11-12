@@ -1,6 +1,7 @@
 package com.teacai.wiki.service;
 
 import jakarta.inject.Singleton;
+import org.flywaydb.core.api.MigrationVersion;
 
 import java.io.IOException;
 import java.io.Writer;
@@ -15,6 +16,31 @@ import java.util.List;
 @Singleton
 public class RestoreValidator {
     public record Migration(String version, Integer checksum, boolean success) {}
+
+    /** Only these controlled compatibility diagnostics are safe to return to the administrator. */
+    public static final class IncompatibleBackupException extends IOException {
+        public IncompatibleBackupException(String message) { super(message); }
+    }
+
+    public boolean requiresMigration(List<Migration> applied, List<Migration> expected,
+                                     MigrationVersion latestAvailable) throws IncompatibleBackupException {
+        for (var migration : applied) {
+            if (migration.version() == null) continue; // Flyway's schema-history creation marker.
+            MigrationVersion version;
+            try { version = MigrationVersion.fromVersion(migration.version()); }
+            catch (RuntimeException e) { throw new IncompatibleBackupException("Backup has an invalid database migration version."); }
+            if (version.compareTo(latestAvailable) > 0) {
+                throw new IncompatibleBackupException("Backup was created with a newer application database version. Upgrade the application before restoring it.");
+            }
+        }
+        // Older backups must be an exact successful prefix, not a divergent, edited, or incomplete history.
+        if (applied.isEmpty() || applied.stream().noneMatch(m -> m.version() != null)
+                || applied.stream().anyMatch(m -> !m.success()) || expected.stream().anyMatch(m -> !m.success())
+                || applied.size() > expected.size() || !expected.subList(0, applied.size()).equals(applied)) {
+            throw new IncompatibleBackupException("Backup database migration history is incompatible: migrations are missing, modified, or failed.");
+        }
+        return applied.size() < expected.size();
+    }
 
     public List<Migration> migrations(Connection connection) throws SQLException {
         var result = new ArrayList<Migration>();

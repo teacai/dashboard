@@ -24,6 +24,8 @@ class DataMaintenanceTest {
             assertEquals(503, filter.admit(HttpRequest.GET("/page")).code());
             assertEquals(503, filter.admit(HttpRequest.GET("/_files/id")).code());
             assertNull(filter.admit(HttpRequest.POST("/_backup", "zip")));
+            assertNull(filter.admit(HttpRequest.POST("/_admin/restore", "zip")));
+            assertEquals(503, filter.admit(HttpRequest.GET("/_admin")).code());
             assertThrows(HttpStatusException.class, maintenance::operation);
         }
         var after = HttpRequest.GET("/page");

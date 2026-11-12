@@ -7,6 +7,8 @@ import io.micrometer.core.instrument.Timer;
 import io.micronaut.http.HttpStatus;
 import io.micronaut.http.exceptions.HttpStatusException;
 import jakarta.inject.Singleton;
+import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,6 +25,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 @Singleton
@@ -60,10 +63,13 @@ public class RestoreService {
                 try {
                     contents = archives.extract(input, workspace);
                     validateStaged(contents, layout);
+                } catch (RestoreValidator.IncompatibleBackupException e) {
+                    LOG.warn("Restore archive rejected: {}", e.getMessage());
+                    throw new HttpStatusException(HttpStatus.BAD_REQUEST, "Invalid backup: " + e.getMessage() + " Current data is unchanged.");
                 } catch (IOException | SQLException | RuntimeException e) {
-                    LOG.warn("Restore archive rejected: validation failed");
+                    LOG.warn("Restore archive rejected: validation or staged migration failed", e);
                     throw new HttpStatusException(HttpStatus.BAD_REQUEST,
-                            "Invalid backup: ZIP, database, schema, or attachment validation failed. Current data is unchanged.");
+                            "Invalid backup: ZIP, database, schema migration, or attachment validation failed. Current data is unchanged.");
                 }
                 LOG.info("Restore archive validated; waiting for active requests to finish");
                 try (var exclusive = maintenance.exclusive()) {
@@ -109,11 +115,31 @@ public class RestoreService {
         Path database = contents.resolve(layout.database());
         if (!Files.isRegularFile(database, LinkOption.NOFOLLOW_LINKS)) throw new IOException("Backup is missing its database");
         String base = database.toString().substring(0, database.toString().length() - ".mv.db".length());
+        // All writes/migrations happen in the extracted copy, never in the current application database.
         // Do not reuse arbitrary JDBC URL options or allow H2 to create an empty database on a missing path.
-        try (var connection = DriverManager.getConnection("jdbc:h2:file:" + base
-                + ";IFEXISTS=TRUE;ACCESS_MODE_DATA=r;DB_CLOSE_ON_EXIT=FALSE", layout.pool().getUsername(), layout.pool().getPassword())) {
+        String url = "jdbc:h2:file:" + base + ";IFEXISTS=TRUE;DB_CLOSE_ON_EXIT=FALSE";
+        try (var connection = DriverManager.getConnection(url, layout.pool().getUsername(), layout.pool().getPassword())) {
             try {
-                validator.validate(connection, contents.resolve(layout.attachments()), layout.migrations());
+                var flyway = Flyway.configure().dataSource(url, layout.pool().getUsername(), layout.pool().getPassword())
+                        .locations("classpath:db/migration").failOnMissingLocations(true)
+                        .validateOnMigrate(true).validateMigrationNaming(true)
+                        .ignoreMigrationPatterns(new String[0]) // Never ignore future/missing migrations.
+                        .baselineOnMigrate(false).outOfOrder(false).cleanDisabled(true).load();
+                var latest = Arrays.stream(flyway.info().all()).filter(info -> info.getState().isResolved())
+                        .map(MigrationInfo::getVersion).filter(java.util.Objects::nonNull)
+                        .max(java.util.Comparator.naturalOrder())
+                        .orElseThrow(() -> new IOException("No application database migrations were found"));
+                boolean older = validator.requiresMigration(validator.migrations(connection), layout.migrations(), latest);
+                // Flyway also validates applied scripts against the resources shipped by this application.
+                var migrated = flyway.migrate();
+                if (migrated.migrationsExecuted > 0) {
+                    metrics.counter("wiki.restore.migrations").increment(migrated.migrationsExecuted);
+                    LOG.info("Staged backup database upgraded: migrations={}, target={}", migrated.migrationsExecuted, latest);
+                }
+                Path attachments = contents.resolve(layout.attachments());
+                // Versions predating attachment storage may not have archived an empty files directory.
+                if (older && !Files.exists(attachments, LinkOption.NOFOLLOW_LINKS)) Files.createDirectories(attachments);
+                validator.validate(connection, attachments, layout.migrations());
             } finally {
                 // A backed-up DB_CLOSE_DELAY setting must not keep the staging database open during renames.
                 try (var statement = connection.createStatement()) { statement.execute("SHUTDOWN"); }

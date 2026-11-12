@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title th:text="${title}">Administration</title>
+  <link rel="stylesheet" href="/_assets/style.css">
+</head>
+<body>
+  <header class="navbar">
+    <a class="brand" href="/" th:text="${appName}">Wiki</a>
+    <span>Administration</span>
+  </header>
+  <main class="page-content admin-content">
+    <h1>Backup and restore</h1>
+    <p>Manage the application's database and files. These actions require administrator authentication.</p>
+    <p th:if="${restored}" class="admin-notice" role="status">Backup restored successfully. The database and files have been replaced. Reload any open editors before making changes.</p>
+    <p th:if="${error}" class="error admin-notice" role="alert" th:text="${error}"></p>
+
+    <section class="admin-panel" aria-labelledby="backup-title">
+      <h2 id="backup-title">Download a backup</h2>
+      <p>Download a ZIP containing all application data and a consistent database snapshot. Keep it in a safe place: it includes page password hashes.</p>
+      <a class="admin-button" href="/_backup">Download backup</a>
+      <p><small>The filename is <code>backup_yyyy_mm_dd.zip</code>, using the server's current date.</small></p>
+    </section>
+
+    <section class="admin-panel" aria-labelledby="restore-title">
+      <h2 id="restore-title">Restore a backup</h2>
+      <p id="restore-warning"><strong>This replaces the current database and all files.</strong> Changes made since the backup will be lost. Download a fresh backup first, and only restore a trusted archive from this application.</p>
+      <p>Older backup databases are upgraded to the current schema before replacement. Backups with a newer database version are rejected. A migration or validation failure leaves the current data unchanged; if installation or database verification fails afterward, the application attempts to roll back to the previous data.</p>
+      <form method="post" action="/_admin/restore" enctype="multipart/form-data" class="admin-restore" aria-describedby="restore-warning">
+        <input type="hidden" name="csrf" th:value="${csrf}">
+        <label for="backup-file">Backup ZIP archive</label>
+        <input id="backup-file" type="file" name="file" accept=".zip,application/zip" required>
+        <label class="admin-confirm">
+          <input type="checkbox" name="confirm" value="restore" required>
+          <span>I understand that restoring replaces the current database and all files.</span>
+        </label>
+        <button type="submit" class="admin-button">Restore backup</button>
+      </form>
+      <p><small>Large restores may take time. Do not close this page while the upload or restore is running. Other requests may temporarily return 503 during replacement.</small></p>
+    </section>
+  </main>
+</body>
+</html>

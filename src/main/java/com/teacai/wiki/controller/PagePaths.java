@@ -39,7 +39,9 @@ public final class PagePaths {
         }
         // Application-owned namespaces must never become user pages.
         if (result.equals("/_assets") || result.startsWith("/_assets/")
-                || result.equals("/_files") || result.startsWith("/_files/")) {
+                || result.equals("/_files") || result.startsWith("/_files/")
+                || result.equals("/_admin") || result.startsWith("/_admin/")
+                || result.equals("/_backup") || result.startsWith("/_backup/")) {
             throw new HttpStatusException(HttpStatus.NOT_FOUND, "Resource not found");
         }
         return result;

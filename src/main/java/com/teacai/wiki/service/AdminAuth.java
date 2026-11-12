@@ -42,8 +42,14 @@ public class AdminAuth {
     }
 
     @Nullable
+    public HttpResponse<?> checkCredentials(HttpRequest<?> request) {
+        return authorized(request) ? null : unauthorized();
+    }
+
+    @Nullable
     public HttpResponse<?> check(HttpRequest<?> request) {
-        if (!authorized(request)) return unauthorized();
+        var rejection = checkCredentials(request);
+        if (rejection != null) return rejection;
         if (request.getMethod() == HttpMethod.POST) {
             // Cached Basic credentials must not authorize a cross-site browser form submission.
             String site = request.getHeaders().get("Sec-Fetch-Site");
