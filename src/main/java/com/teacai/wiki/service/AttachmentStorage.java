@@ -34,6 +34,8 @@ public class AttachmentStorage {
         limit = properties.getMaxUploadSize();
     }
 
+    public Path root() { return root; }
+
     public static String storageKey(String page, String relative) {
         validateRelative(relative);
         // %00 cannot occur in a valid canonical page path. Preserve empty/trailing URL segments.

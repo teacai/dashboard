@@ -29,6 +29,8 @@ datasources:
     username: sa
     password: ${WIKI_DB_PASSWORD:}
     maximum-pool-size: 3
+    # Restore suspends/evicts connections before replacing the database file.
+    allow-pool-suspension: true
     minimum-idle: 0
     connection-timeout: 10000
     idle-timeout: 60000
@@ -41,6 +43,10 @@ flyway:
 wiki:
   name: ${WIKI_NAME:Wiki}
   max-page-size: ${WIKI_MAX_PAGE_SIZE:104857600}
+  data-directory: ${WIKI_DATA_DIRECTORY:./data}
+  admin-username: ${WIKI_ADMIN_USERNAME:admin}
+  admin-password: ${WIKI_ADMIN_PASSWORD:admin112}
+  max-restore-size: ${WIKI_MAX_RESTORE_SIZE:21474836480}
   files-directory: ${WIKI_FILES_DIRECTORY:./data/files}
   max-upload-size: ${WIKI_MAX_UPLOAD_SIZE:2147483648}
   master-password: ${WIKI_MASTER_PASSWORD:}

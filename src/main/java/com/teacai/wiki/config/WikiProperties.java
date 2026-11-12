@@ -8,8 +8,36 @@ public class WikiProperties {
     private long maxPageSize = 104857600;
     private String masterPassword = "";
     private boolean secureCookies;
+    private String dataDirectory = "./data";
     private String filesDirectory = "./data/files";
     private long maxUploadSize = 2L * 1024 * 1024 * 1024;
+    private String adminUsername = "admin";
+    private String adminPassword = "admin112";
+    private long maxRestoreSize = 20L * 1024 * 1024 * 1024;
+
+    public String getAdminUsername() { return adminUsername; }
+    public void setAdminUsername(String username) {
+        if (username == null || username.isBlank() || username.contains(":")) {
+            throw new IllegalArgumentException("wiki.admin-username must not be blank or contain a colon");
+        }
+        adminUsername = username;
+    }
+    public String getAdminPassword() { return adminPassword; }
+    public void setAdminPassword(String password) {
+        if (password == null || password.isBlank()) throw new IllegalArgumentException("wiki.admin-password must not be blank");
+        adminPassword = password;
+    }
+    public long getMaxRestoreSize() { return maxRestoreSize; }
+    public void setMaxRestoreSize(long size) {
+        if (size < 1) throw new IllegalArgumentException("wiki.max-restore-size must be positive");
+        maxRestoreSize = size;
+    }
+
+    public String getDataDirectory() { return dataDirectory; }
+    public void setDataDirectory(String dataDirectory) {
+        if (dataDirectory == null || dataDirectory.isBlank()) throw new IllegalArgumentException("wiki.data-directory must not be blank");
+        this.dataDirectory = dataDirectory;
+    }
 
     public String getFilesDirectory() { return filesDirectory; }
     public void setFilesDirectory(String filesDirectory) {

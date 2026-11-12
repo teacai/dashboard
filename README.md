@@ -72,7 +72,7 @@ WIKI_MASTER_PASSWORD='choose-a-long-random-secret' ./gradlew run
 
 When the configured master password is non-blank, every save requires that exact master password, including new, blank, public, and previously protected pages. The editor's one password field authenticates the save; it does not set a per-page password in this mode. Existing page hashes are retained, so removing master mode restores the previous per-page protection. Keep production secrets in your service manager's protected environment, not source control or shell history.
 
-**Passwords protect writes only. All pages, editors, file lists, and uploaded files are publicly readable.** Uploads and file deletion use the same edit-password rules. There is no password recovery UI, revision history, page deletion, or page-password rotation feature. A configured master password can authorize edits when a page password is lost.
+**Page/master passwords protect writes only. All pages, editors, file lists, and uploaded files are publicly readable. Backup and restore at `/_backup` require separate administrator credentials.** Uploads and file deletion use the same edit-password rules. There is no password recovery UI, revision history, page deletion, or page-password rotation feature. A configured master password can authorize edits when a page password is lost.
 
 ## Configuration
 
@@ -86,6 +86,10 @@ See [`src/main/resources/application.yml`](src/main/resources/application.yml). 
 | `WIKI_DB_PASSWORD` | empty | H2 connection password; not a page password or file-encryption key |
 | `WIKI_MASTER_PASSWORD` | empty | Unset/blank enables per-page mode; non-blank overrides page passwords for all saves |
 | `WIKI_MAX_PAGE_SIZE` | `104857600` | Maximum **decoded Markdown UTF-8 bytes** (100 MiB) |
+| `WIKI_DATA_DIRECTORY` | `./data` | Backup/restore data root; must contain the database and attachment root |
+| `WIKI_ADMIN_USERNAME` | `admin` | Basic-auth administrator for backup and restore (`wiki.admin-username`) |
+| `WIKI_ADMIN_PASSWORD` | `admin112` | Basic-auth administrator password (`wiki.admin-password`); **change before deployment** |
+| `WIKI_MAX_RESTORE_SIZE` | `21474836480` | Maximum ZIP bytes and total expanded restore bytes (20 GiB), independently of HTTP upload limits |
 | `WIKI_FILES_DIRECTORY` | `./data/files` | Persistent attachment root, relative to the process working directory |
 | `WIKI_MAX_UPLOAD_SIZE` | `2147483648` | Maximum bytes per file **and** sum of file bytes per upload; may be lowered, never raised above 2 GiB |
 | `WIKI_MAX_REQUEST_SIZE` | `2253389824` | Transport limit: 2 GiB files + 100 MiB Markdown + 1 MiB multipart overhead |
@@ -118,7 +122,8 @@ Provide sufficient temporary-disk capacity: Micronaut's multipart spool uses the
 - `POST /anything/nested` saves a URL-encoded form and returns **303** to the page (Post/Redirect/Get).
 - `/editor` edits `/`; posting to `/` saves the root page.
 - `POST /_files/upload` accepts indexed multipart files and a relative-path manifest; `POST /_files/delete` deletes an owned file; `GET /_files/{uuid}` downloads a file.
-- The final `/editor` suffix and `/_assets` / `/_files` namespaces are reserved. Paths ending in `/editor` cannot themselves be content pages.
+- `GET /_backup` downloads a ZIP of the data directory, including a consistent live database snapshot; `POST /_backup` restores a raw ZIP or a multipart `file` field. Both require administrator Basic authentication (see below).
+- `/_backup`, the final `/editor` suffix and `/_assets` / `/_files` namespaces are reserved. Paths ending in `/editor` cannot themselves be content pages.
 - Slashes inside paths, repeated slashes, trailing slashes, Unicode, spaces, and escaped reserved characters are supported. `/a`, `/a/`, `/a/b`, and `/a%2Fb` are distinct pages. Literal reserved delimiters must be percent-encoded where appropriate: `%23` for `#`, `%3F` for `?`.
 - Percent escape hex is canonicalized to uppercase; escaped unreserved characters are decoded. For example `/a%7Eb` and `/a~b` refer to the same page. Encoded slashes are **not** decoded into path separators.
 - Queries do not identify a page; fragments never reach the server. Dot segments, control characters, and backslashes are rejected. Browsers can normalize dot segments before sending a request.
@@ -166,6 +171,93 @@ A separate packaged-app smoke test verified: 100 MiB + 1 byte returns 413, exact
 
 Run one JVM per database file on a local persistent disk (not a shared network filesystem). Protect the data directory with OS permissions; page passwords do **not** encrypt content at rest. For a straightforward consistent backup, stop the app cleanly and copy **both** `wiki.mv.db` and the configured files directory together; metadata and attachments must be restored as a pair. Include any staging directories when investigating an interrupted installation. Do not copy a live database without using H2's supported backup mechanism. Back up before upgrading. Flyway runs on startup and validates migration checksums; V1 is preserved, V2 upgrades the scaffold's schema, and V3 adds file ownership metadata. Legacy scaffold SHA-256 password hashes are deliberately not accepted as PBKDF2 hashes; use master mode to authorize writes to such pages if needed.
 
+#### Downloading and restoring a backup
+
+**Both `GET /_backup` and `POST /_backup` require HTTP Basic authentication.** The default administrator is **`admin` / `admin112`**. This is a configuration-based administrator, not a wiki page account, and is independent of `WIKI_MASTER_PASSWORD`. Missing/incorrect credentials return **401** with a Basic-auth challenge. Set a strong password before exposing the application, use **HTTPS**, and apply proxy access/rate limits. The application warns when the default credentials are in use.
+
+Configure the credentials in `application.yml` (or equivalent application properties):
+
+```yaml
+wiki:
+  admin-username: admin
+  admin-password: replace-with-a-long-random-password
+```
+
+Prefer protected environment overrides `WIKI_ADMIN_USERNAME` / `WIKI_ADMIN_PASSWORD` in production; never commit real credentials. The commands below prompt for the password instead of placing it in shell history. Replace `admin` if you configured a different username.
+
+##### Download with curl or wget
+
+Navigating to `/_backup` prompts for administrator credentials and downloads **`backup_yyyy_mm_dd.zip`**, using the server's local date (for example, `backup_2026_11_12.zip`). To download from a terminal:
+
+```sh
+BASE_URL='https://wiki.example.com'
+
+# curl: use the filename supplied in Content-Disposition.
+curl --fail --show-error --user admin --remote-name --remote-header-name \
+  "$BASE_URL/_backup"
+
+# GNU wget: use the same server-supplied filename.
+wget --user=admin --ask-password --content-disposition "$BASE_URL/_backup"
+```
+
+Treat the ZIP as sensitive: it includes all content, uploaded files, password hashes, and unmanaged files in the data directory. Archive paths are relative to `WIKI_DATA_DIRECTORY`, including nested files, empty directories, and existing backups. The default root is `./data` (`/app/data` in Docker). For a server storing data at `/data`, configure:
+
+```sh
+WIKI_DATA_DIRECTORY=/data
+WIKI_DB_URL='jdbc:h2:file:/data/wiki;DB_CLOSE_ON_EXIT=FALSE;CACHE_SIZE=8192'
+WIKI_FILES_DIRECTORY=/data/files
+```
+
+`WIKI_DATA_DIRECTORY` selects the backup/restore root; it does not relocate existing data. The file-backed H2 database and attachments must both be inside it. Symbolic links and special files cause backup failure rather than exposing external data. The active H2 process-lock file and internal `.wiki-restore-*` / `.wiki-previous-*` recovery directories are omitted.
+
+The application uses H2's supported `BACKUP TO` command instead of copying the live database. Page saves and attachment installations/deletions pause during archive generation; ordinary reads can continue. Only one backup generation or restore runs at a time; concurrent operations return **503**. Do not modify the data directory outside the application. Upload-staging directories may be included if present; an active upload can cause generation to fail, in which case retry when it finishes.
+
+Generation/download use bounded-memory streams. Allow free space in the JVM temporary directory (outside the data root) for the H2 snapshot and full ZIP. Temporary backup files are removed after generation failure or download-stream closure. The generated ZIP is not stored in the data root.
+
+##### Restore with curl or wget
+
+**Restore replaces the current database and all ordinary files in the data root. Changes made since the backup will be lost. Download a fresh backup before proceeding.** Restore only trusted application-generated archives, using the same relative database/attachment paths, database credentials, compatible H2 version, and matching Flyway migration history/checksums. Archives with missing/corrupt databases or missing/incorrectly sized attachments are rejected before current data is changed.
+
+Upload the ZIP as a raw request body (`application/zip` or `application/octet-stream`):
+
+```sh
+BASE_URL='https://wiki.example.com'
+BACKUP='backup_2026_11_12.zip'
+
+# curl: --data-binary is essential; do not use text/form encoding for ZIP bytes.
+curl --fail --show-error --user admin \
+  --header 'Content-Type: application/zip' \
+  --data-binary "@$BACKUP" "$BASE_URL/_backup"
+
+# GNU wget: send the ZIP directly, writing the server's result to a separate file.
+wget --user=admin --ask-password --auth-no-challenge \
+  --method=POST --header='Content-Type: application/zip' \
+  --body-file="$BACKUP" --output-document=restore-result.txt "$BASE_URL/_backup"
+```
+
+Alternatively, curl can submit a multipart upload in the **`file`** field:
+
+```sh
+curl --fail --show-error --user admin \
+  --form "file=@$BACKUP;type=application/zip" "$BASE_URL/_backup"
+```
+
+Successful restore returns **200** and `Backup restored successfully.` Invalid archives return **400** without changing current data. Size/transport limits can return **413**; authentication failures return **401**; maintenance contention returns **503**. An installation/reopen failure returns **500** after attempting rollback. Restore is a CLI/API operation: browser-origin POSTs (`Origin` or non-`none` `Sec-Fetch-Site`) are rejected with **403** to prevent cached Basic credentials from enabling CSRF.
+
+Restore works as follows:
+
+1. Stream the upload into a private `.wiki-restore-*` directory inside the data root, then extract it there. Reject traversal/absolute paths, duplicate/conflicting paths, invalid ZIP checksums, reserved recovery paths, more than 100,000 entries, and archives exceeding `WIKI_MAX_RESTORE_SIZE` (20 GiB compressed or expanded by default).
+2. Open the staged H2 database read-only, compare migration history/checksums, read page/CLOB data, and verify attachment ownership, paths, existence, and byte sizes.
+3. Reject new normal HTTP requests with **503**, and wait up to 30 seconds for active requests (including file downloads/uploads) to finish. If they do not drain, abort without replacing data.
+4. Suspend/evict the Hikari pool and close H2. Rename current files/directories into `.wiki-previous-*`, then move the validated staged data into place. The root directory itself is not renamed, so mounted `/data` volumes are supported.
+5. Reopen the configured application database and repeat validation. On failure, close the replacement database, move the previous database/files back, reopen and validate them, and resume service. On success, remove the previous-data directory and staging area. No application restart is normally needed.
+
+Allow enough free disk for the uploaded ZIP, expanded backup, and retained current data during replacement. The default HTTP request limit is approximately 2.1 GiB and multipart ZIP parts are limited to 2 GiB; `WIKI_MAX_RESTORE_SIZE` does not override transport/proxy limits. For larger archives, use raw ZIP uploads and raise `WIKI_MAX_REQUEST_SIZE`, `WIKI_MAX_RESTORE_SIZE`, and proxy limits appropriately. Keep `datasources.default.allow-pool-suspension=true` (the application default).
+
+Rollback handles ordinary filesystem/database errors; this is **not a crash-atomic filesystem transaction**. If the process/machine stops during replacement, or rollback itself fails, preserve `.wiki-previous-*` and `.wiki-restore-*` and follow the recovery-directory paths in the logs. On an unrecoverable rollback, normal requests remain unavailable until an operator repairs the data and restarts. Never delete recovery directories until you have verified which database/files to retain. Cleanup failures are logged for manual attention.
+
+For offline recovery, stop the application, extract a known-good ZIP into a clean data directory, check ownership/permissions, and restart. Database metadata and attachments must always be restored together. Configuration and environment secrets outside the data root are not archived or changed by restore; retain those separately.
+
 ### Observability
 
 Logs are structured JSON on stdout and include startup, migrations, successful saves and invalid-password failures. Save logs include size/version/protection metadata, never content or passwords. Health is naturally checked with `GET /` (which can intentionally contain user content).
@@ -177,6 +269,9 @@ Micrometer publishes metrics to the **local JVM's JMX MBean server** (domain `me
 - `wiki.saves` counters, tagged by bounded result values
 - `wiki.work.active` and `wiki.requests.rejected`
 - `wiki.files.upload` timer, `wiki.files.uploaded`, `wiki.files.bytes`, `wiki.files.deleted`, and `wiki.files.failures` counters
+- `wiki.backup.duration` timer and `wiki.backups` counters tagged by `success` / `failure`
+- `wiki.restore.duration` timer and `wiki.restores` counters tagged by `success` / `failure` / `rollback`
+- `wiki.admin.authentication` failed-credential counter
 - Micronaut HTTP and JVM metrics
 
 ### Verification
@@ -186,7 +281,7 @@ Micrometer publishes metrics to the **local JVM's JMX MBean server** (domain `me
 # HTML test report: build/reports/tests/test/index.html
 ```
 
-Tests cover root/blank pages; nested, encoded, repeated- and trailing-slash paths; escaped textarea round-trips including leading newlines; create/update/protection; master precedence; invalid CSRF; malicious HTML; UTF-8 byte boundaries; forms exceeding framework default buffers; stale edits; upload admission/disconnection cleanup; and file-database restart persistence. Tests use isolated in-memory/temporary file databases, never `./data/wiki`.
+Tests cover root/blank pages; nested, encoded, repeated- and trailing-slash paths; escaped textarea round-trips including leading newlines; create/update/protection; master precedence; invalid CSRF; malicious HTML; UTF-8 byte boundaries; forms exceeding framework default buffers; stale edits; upload admission/disconnection cleanup; and file-database restart persistence. Backup/restore tests additionally verify default/custom administrator authentication, browser-navigation downloads, dated filenames, nested/Unicode files, empty directories, raw/multipart HTTP restores, complete data replacement, live-database restoration with attachment metadata, rollback after an installed-database read failure, symlink/traversal/size-limit rejection, incomplete-configuration rejection, and maintenance admission/draining. Tests use isolated in-memory/temporary file databases, never `./data/wiki`.
 
 #### Playwright end-to-end test
 
