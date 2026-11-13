@@ -73,7 +73,7 @@ class WikiHttpTest {
         }
     }
 
-    @Test void publicPagesCanBeProtectedButNeverUnprotectedOrRekeyed() throws Exception {
+    @Test void ordinarySavesCanProtectPublicPagesButCannotRemoveOrReplaceExistingPasswords() throws Exception {
         String path = path();
         var form = http.editor(path);
         form.put("content", "public");

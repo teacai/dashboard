@@ -25,7 +25,7 @@ async function expectWithinViewport(locator, viewport) {
 }
 
 async function expectEditorFits(page, viewport) {
-    for (const selector of ['.navbar', '.brand', 'input[name=password]', 'button[type=submit]', 'textarea']) {
+    for (const selector of ['.navbar', '.brand', 'input[name=password]', '#page-settings', '.save-button', 'textarea']) {
         await expectWithinViewport(page.locator(selector), viewport);
     }
     const sizes = await page.evaluate(() => ({

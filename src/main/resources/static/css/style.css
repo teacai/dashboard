@@ -27,11 +27,23 @@ a { color: var(--accent); }
 textarea { display: block; flex: 1; min-width: 0; min-height: 0; width: 100%; overflow: auto; resize: none; padding: 1rem; border: 0; border-radius: 0; background: var(--bg); color: var(--fg); font: .95rem/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 4; }
 textarea:focus-visible { outline-offset: -2px; }
 .error { flex-shrink: 0; padding: .7rem 1rem; margin: 0; background: var(--error-bg); border-bottom: 1px solid var(--line); }
-.upload-menu, #files-dialog { width: calc(100% - 2rem); max-width: 40rem; max-height: calc(100dvh - 2rem); padding: 1rem; border: 1px solid var(--line); border-radius: .5rem; color: var(--fg); background: var(--bg); }
-.upload-menu button { padding: .6rem 1rem; border: 1px solid var(--line); border-radius: .3rem; background: var(--muted); color: inherit; font: inherit; cursor: pointer; }
-.upload-menu p, #files-dialog p { margin: .5rem 0; font-size: .875rem; }
-#files-dialog[open] { display: flex; flex-direction: column; }
-#files-dialog::backdrop { background: #0008; }
+#settings-dialog { width: calc(100% - 2rem); max-width: 40rem; max-height: calc(100dvh - 2rem); padding: 1rem; overflow: hidden; border: 1px solid var(--line); border-radius: .5rem; color: var(--fg); background: var(--bg); }
+.settings-action { padding: .6rem 1rem; border: 1px solid var(--line); border-radius: .3rem; background: var(--muted); color: inherit; font: inherit; cursor: pointer; }
+#settings-dialog p { margin: .5rem 0; font-size: .875rem; }
+#settings-dialog[open] { display: flex; flex-direction: column; }
+#settings-dialog::backdrop { background: #0008; }
+.settings-body { min-height: 0; overflow: auto; }
+.settings-tabs { display: flex; flex-shrink: 0; gap: .5rem; margin: .5rem 0; border-bottom: 1px solid var(--line); }
+.settings-tab { padding: .5rem 1rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.settings-tab:hover { background: var(--muted); }
+.settings-tab[aria-selected=true] { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }
+.settings-body h3 { margin: .5rem 0; font-size: 1rem; }
+.settings-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+#password-settings { display: grid; gap: .5rem; }
+#password-settings label { display: grid; gap: .25rem; }
+#password-settings input { width: 100%; min-width: 0; padding: .4rem .6rem; border: 1px solid var(--line); border-radius: .3rem; background: var(--bg); color: inherit; font: inherit; }
+#password-settings .settings-action { justify-self: start; }
+.settings-notice { padding: .5rem; border: 1px solid var(--line); border-radius: .3rem; background: var(--muted); }
 .dialog-header { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: .5rem; }
 .dialog-header h2 { margin: 0; font-size: 1.1rem; }
 .file-list { min-height: 0; overflow: auto; list-style: none; margin: .5rem 0 0; padding: 0; }
@@ -52,12 +64,11 @@ textarea:focus-visible { outline-offset: -2px; }
 .admin-notice.error { background: var(--error-bg); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 @media (max-width: 480px) {
-  .editing .navbar { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, 2.5rem); }
+  .editing .navbar { display: grid; grid-template-columns: minmax(0, 1fr) repeat(2, 2.5rem); }
   .editor-actions { display: contents; }
   .editor-actions .icon-button { grid-row: 1; }
-  .upload-button { grid-column: 2; }
-  .files-button { grid-column: 3; }
-  .save-button { grid-column: 4; }
+  .settings-button { grid-column: 2; }
+  .save-button { grid-column: 3; }
   .password { grid-column: 1 / -1; grid-row: 2; }
   .password input { width: 100%; margin-bottom: .3rem; }
 }

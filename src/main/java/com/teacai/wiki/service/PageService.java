@@ -42,15 +42,51 @@ public class PageService {
     }
 
     public void savePage(String path, String content, String password, long expectedVersion) {
-        Page updated = preparePage(path, content, password, expectedVersion);
+        commit(preparePage(path, content, password, expectedVersion));
+    }
+
+    /** Save the draft and replace/remove protection in one version-checked database write. */
+    public Page changePassword(String path, String content, String oldPassword, String newPassword,
+                               String confirmation, long expectedVersion) {
+        try {
+            if (usesMasterPassword()) {
+                throw new HttpStatusException(HttpStatus.FORBIDDEN,
+                        "Page password changes are disabled while a master password is configured.");
+            }
+            if (newPassword == null || confirmation == null || newPassword.length() > 1024
+                    || confirmation.length() > 1024) {
+                throw new HttpStatusException(HttpStatus.BAD_REQUEST, "Enter and confirm a new password (at most 1024 characters).");
+            }
+            if (!newPassword.equals(confirmation)) {
+                throw new HttpStatusException(HttpStatus.BAD_REQUEST, "New passwords do not match. Your draft has not been saved.");
+            }
+            Page prepared = preparePage(path, content, oldPassword, expectedVersion, true);
+            String hash = newPassword.isEmpty() ? null : passwords.hashPassword(newPassword);
+            Page updated = new Page(path, prepared.content(), hash, prepared.version());
+            commit(updated);
+            metrics.counter("wiki.password.changes", "result", "success").increment();
+            LOG.info("Page password changed: protected={}", updated.isProtected());
+            return new Page(path, updated.content(), updated.passwordHash(), updated.version() + 1);
+        } catch (HttpStatusException e) {
+            metrics.counter("wiki.password.changes", "result", "rejected").increment();
+            LOG.warn("Page password change rejected: status={}", e.getStatus().getCode());
+            throw e;
+        }
+    }
+
+    private void commit(Page updated) {
         synchronized (this) {
-            if (!metrics.timer("wiki.database.write").record(() -> repository.save(updated, expectedVersion))) conflict();
+            if (!metrics.timer("wiki.database.write").record(() -> repository.save(updated, updated.version()))) conflict();
         }
         saved(updated);
     }
 
     /** Authenticate and validate before staging files; recheck the version during the atomic write. */
     public Page preparePage(String path, String content, String password, long expectedVersion) {
+        return preparePage(path, content, password, expectedVersion, false);
+    }
+
+    private Page preparePage(String path, String content, String password, long expectedVersion, boolean passwordChange) {
         if (content == null) throw new HttpStatusException(HttpStatus.BAD_REQUEST, "Missing page content");
         if (content.length() > properties.getMaxPageSize()
                 || content.getBytes(StandardCharsets.UTF_8).length > properties.getMaxPageSize()) {
@@ -63,16 +99,16 @@ public class PageService {
         String pageHash = existing.isProtected() ? existing.passwordHash() : null;
         // A configured master password overrides page passwords; otherwise public/new pages need none.
         String requiredHash = masterHash != null ? masterHash : pageHash;
-        if (requiredHash != null || (password != null && !password.isEmpty())) checkAuthBudget();
+        if (passwordChange || requiredHash != null || (password != null && !password.isEmpty())) checkAuthBudget();
         if (requiredHash != null && !passwords.verifyPassword(password, requiredHash)) {
             metrics.counter("wiki.saves", "result", "forbidden").increment();
             LOG.warn("Page save rejected: invalid password");
-            throw new HttpStatusException(HttpStatus.FORBIDDEN, "Incorrect password. Your draft is preserved below.");
+            throw new HttpStatusException(HttpStatus.FORBIDDEN, "Incorrect password. Your draft is preserved in the editor.");
         }
         if (existing.version() != expectedVersion) conflict();
         String hash = pageHash;
         // A single password field either sets protection or authenticates existing protection.
-        if (masterHash == null && hash == null && password != null && !password.isEmpty()) {
+        if (!passwordChange && masterHash == null && hash == null && password != null && !password.isEmpty()) {
             hash = passwords.hashPassword(password);
         }
         return new Page(path, content, hash, expectedVersion);

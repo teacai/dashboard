@@ -19,46 +19,66 @@
         <input form="editor" type="password" name="password" maxlength="1024" th:placeholder="${passwordHint}"
                th:aria-label="${passwordHint}" autocomplete="off" spellcheck="false">
       </label>
-      <button type="button" class="icon-button upload-button" popovertarget="upload-menu" aria-label="Upload files" title="Upload files or a folder">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 16v5h16v-5"/></svg>
-      </button>
-      <button type="button" id="manage-files" class="icon-button files-button" aria-label="Manage files" title="Manage files">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h6l2 3h10v13H3ZM3 7h18"/></svg>
+      <button type="button" id="page-settings" class="icon-button settings-button" aria-label="Page settings" title="Page settings" aria-haspopup="dialog" aria-controls="settings-dialog">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-.5 3-2 1-2.5-1-2 3 2 2v2l-2 2 2 3 2.5-1 2 1 .5 3h6l.5-3 2-1 2.5 1 2-3-2-2v-2l2-2-2-3-2.5 1-2-1L15 3Z"/><circle cx="12" cy="12" r="3"/></svg>
       </button>
       <button form="editor" type="submit" class="icon-button save-button" aria-label="Save page" title="Save page">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12l4 4v12a2 2 0 0 1-2 2ZM7 3v6h9V3M7 21v-8h10v8"/></svg>
       </button>
     </div>
   </header>
-  <div th:if="${editor}" id="upload-menu" popover class="upload-menu">
-    <button type="button" id="choose-files">Upload files</button>
-    <button type="button" id="choose-folder">Upload folder</button>
-    <p>Uploads save your draft and append file links. Matching files are replaced.</p>
-  </div>
   <input th:if="${editor}" id="file-picker" type="file" multiple hidden>
   <input th:if="${editor}" id="folder-picker" type="file" webkitdirectory multiple hidden>
-  <dialog th:if="${editor}" id="files-dialog" aria-labelledby="files-title">
+  <dialog th:if="${editor}" id="settings-dialog" aria-labelledby="settings-title" th:attr="data-open=${settingsOpen}">
     <div class="dialog-header">
-      <h2 id="files-title">Page files</h2>
-      <button type="button" id="close-files" class="icon-button" aria-label="Close files" title="Close files">
+      <h2 id="settings-title">Page settings</h2>
+      <button type="button" id="close-settings" class="icon-button" aria-label="Close page settings" title="Close page settings">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg>
       </button>
     </div>
-    <p>Files are public. Deleting a file does not remove its Markdown links or save your draft.</p>
-    <p th:if="${#lists.isEmpty(files)}">No files uploaded to this page.</p>
-    <ul class="file-list" th:unless="${#lists.isEmpty(files)}">
-      <li th:each="file : ${files}">
-        <a th:href="${file.url()}" th:text="${file.relativePath()}">File</a>
-        <small th:text="${file.sizeBytes()} + ' bytes'"></small>
-        <button type="button" class="icon-button insert-file" th:aria-label="'Insert ' + ${file.relativePath()}" title="Insert file link">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/></svg>
-        </button>
-        <button form="editor" type="submit" name="fileId" th:value="${file.publicId()}" formaction="/_files/delete"
-                class="icon-button delete-file" th:aria-label="'Delete ' + ${file.relativePath()}" title="Delete file">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg>
-        </button>
-      </li>
-    </ul>
+    <div class="settings-tabs" role="tablist" aria-label="Page settings">
+      <button type="button" id="settings-files-tab" class="settings-tab" role="tab" aria-selected="true" aria-controls="settings-files-panel" tabindex="0">Files</button>
+      <button type="button" id="settings-password-tab" class="settings-tab" role="tab" aria-selected="false" aria-controls="settings-password-panel" tabindex="-1">Password</button>
+    </div>
+    <div class="settings-body">
+      <section id="settings-files-panel" role="tabpanel" aria-labelledby="settings-files-tab" tabindex="0">
+        <h3 id="files-title">Page files</h3>
+        <div class="settings-actions">
+          <button type="button" id="choose-files" class="settings-action">Upload files</button>
+          <button type="button" id="choose-folder" class="settings-action">Upload folder</button>
+        </div>
+        <p>Uploads save your draft and append file links. Matching files are replaced.</p>
+        <p>Files are public. Deleting a file does not remove its Markdown links or save your draft.</p>
+        <p th:if="${#lists.isEmpty(files)}">No files uploaded to this page.</p>
+        <ul class="file-list" th:unless="${#lists.isEmpty(files)}">
+          <li th:each="file : ${files}">
+            <a th:href="${file.url()}" th:text="${file.relativePath()}">File</a>
+            <small th:text="${file.sizeBytes()} + ' bytes'"></small>
+            <button type="button" class="icon-button insert-file" th:aria-label="'Insert ' + ${file.relativePath()}" title="Insert file link">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/></svg>
+            </button>
+            <button form="editor" type="submit" name="fileId" th:value="${file.publicId()}" formaction="/_files/delete"
+                    class="icon-button delete-file" th:aria-label="'Delete ' + ${file.relativePath()}" title="Delete file">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg>
+            </button>
+          </li>
+        </ul>
+      </section>
+      <section id="settings-password-panel" role="tabpanel" aria-labelledby="settings-password-tab" tabindex="0" hidden>
+        <h3 id="password-title">Page password</h3>
+        <p th:unless="${passwordChangesAllowed}">Page password changes are disabled while a master password is configured. The master password is managed in server configuration.</p>
+        <p th:if="${settingsError}" class="error" role="alert" tabindex="-1" th:text="${settingsError}"></p>
+        <p th:if="${settingsNotice}" class="settings-notice" role="status" tabindex="-1" th:text="${settingsNotice}"></p>
+        <form th:if="${passwordChangesAllowed}" id="password-settings" method="post" th:action="${path}" accept-charset="UTF-8">
+          <input type="hidden" name="action" value="change-password">
+          <label>Old password<input type="password" name="oldPassword" maxlength="1024" autocomplete="off" spellcheck="false"></label>
+          <label>New password<input type="password" name="newPassword" maxlength="1024" autocomplete="off" spellcheck="false"></label>
+          <label>Confirm new password<input type="password" name="confirmPassword" maxlength="1024" autocomplete="off" spellcheck="false"></label>
+          <p>Leave the old password blank for an unprotected page. Leave both new fields blank to remove protection. This also saves your current Markdown draft.</p>
+          <button type="submit" class="settings-action">Change password and save draft</button>
+        </form>
+      </section>
+    </div>
   </dialog>
   <!-- Only sanitizer output is inserted without escaping. All editor content and attributes are escaped. -->
   <main th:unless="${editor}" class="page-content" th:utext="${html}"></main>

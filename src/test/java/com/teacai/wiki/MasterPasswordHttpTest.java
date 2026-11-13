@@ -19,6 +19,26 @@ class MasterPasswordHttpTest {
     @Inject PageRepository repository;
     @Inject PasswordService passwords;
 
+    @Test void masterModeDisablesPasswordSettingsAndRejectsForgedPasswordChanges() throws Exception {
+        try (var http = new HttpTestSupport(server.getURI())) {
+            String path = "/master/settings/" + UUID.randomUUID();
+            String hash = passwords.hashPassword("page-secret");
+            assertTrue(repository.save(new Page(path, "original", hash, -1), -1));
+            var editor = org.jsoup.Jsoup.parse(http.get(path + "/editor").body());
+            assertTrue(editor.select("#password-settings").isEmpty());
+            assertTrue(editor.selectFirst("#settings-dialog").text().contains("disabled while a master password is configured"));
+            var form = http.editor(path);
+            form.put("action", "change-password");
+            form.put("oldPassword", "master-secret");
+            form.put("newPassword", "replacement");
+            form.put("confirmPassword", "replacement");
+            form.put("content", "must not save");
+            assertEquals(403, http.post(path, form).statusCode());
+            assertEquals("original", repository.findByPath(path).orElseThrow().content());
+            assertEquals(hash, repository.findByPath(path).orElseThrow().passwordHash());
+        }
+    }
+
     @Test void masterPasswordIsRequiredForEverySaveAndOverridesExistingPagePasswords() throws Exception {
         try (var http = new HttpTestSupport(server.getURI())) {
             String path = "/master/" + UUID.randomUUID();

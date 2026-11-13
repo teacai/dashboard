@@ -73,6 +73,16 @@ public class WikiController {
         long version;
         try { version = Long.parseLong(form.getOrDefault("version", "")); }
         catch (NumberFormatException e) { throw new HttpStatusException(HttpStatus.BAD_REQUEST, "Missing page version"); }
+        if ("change-password".equals(form.get("action"))) {
+            try {
+                Page updated = pages.changePassword(path, form.get("content"), form.get("oldPassword"),
+                        form.get("newPassword"), form.get("confirmPassword"), version);
+                return editor(request, updated, null, HttpStatus.OK, true);
+            } catch (HttpStatusException e) {
+                Page draft = new Page(path, form.getOrDefault("content", ""), null, version);
+                return editor(request, draft, e.getMessage(), e.getStatus(), true);
+            }
+        }
         try {
             pages.savePage(path, form.get("content"), form.get("password"), version);
         } catch (HttpStatusException e) {
@@ -86,10 +96,18 @@ public class WikiController {
     }
 
     HttpResponse<?> editor(HttpRequest<?> request, Page page, String error, HttpStatus status) {
+        return editor(request, page, error, status, false);
+    }
+
+    private HttpResponse<?> editor(HttpRequest<?> request, Page page, String error, HttpStatus status, boolean passwordResult) {
         String token = csrf.token(request);
         var model = model(page, true);
         model.put("csrf", token);
-        model.put("error", error);
+        model.put("error", passwordResult ? null : error);
+        model.put("settingsError", passwordResult ? error : null);
+        model.put("settingsOpen", passwordResult);
+        model.put("settingsNotice", passwordResult && error == null ? "Password updated. Your draft has been saved." : null);
+        model.put("passwordChangesAllowed", !pages.usesMasterPassword());
         model.put("files", files.list(page.path()));
         model.put("passwordHint", pages.usesMasterPassword() ? "Master password"
                 : error != null ? "Password" : page.isProtected() ? "Page password" : "Set password (optional)");

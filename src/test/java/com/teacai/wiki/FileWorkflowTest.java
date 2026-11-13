@@ -61,6 +61,22 @@ class FileWorkflowTest {
         assertFalse(Files.exists(storage.resolve(AttachmentStorage.storageKey(path, "file.txt"))));
     }
 
+    @Test void passwordChangeWhileStagingRejectsAnUploadAuthorizedWithTheOldPassword() throws Exception {
+        String path = path();
+        pages.savePage(path, "original", "old-secret", -1);
+        long version = pages.getPage(path).version();
+        var changingSource = new AttachmentStorage.Source("file.txt", 3, () -> {
+            pages.changePassword(path, "Password-change draft", "old-secret", "new-secret", "new-secret", version);
+            return new ByteArrayInputStream(new byte[]{1, 2, 3});
+        });
+        var error = assertThrows(HttpStatusException.class, () -> files.upload(path, "stale draft", "old-secret", version, List.of(changingSource)));
+        assertEquals(HttpStatus.CONFLICT, error.getStatus());
+        assertEquals("Password-change draft", pages.getPage(path).content());
+        assertTrue(repository.list(path).isEmpty());
+        assertFalse(Files.exists(storage.resolve(AttachmentStorage.storageKey(path, "file.txt"))));
+        pages.savePage(path, "New password works", "new-secret", pages.getPage(path).version());
+    }
+
     @Test void appendedLinksAreIncludedInTheMarkdownSizeLimitBeforeFilesAreInstalled() throws Exception {
         long previous = properties.getMaxPageSize();
         String path = path();

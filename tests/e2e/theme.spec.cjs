@@ -37,11 +37,9 @@ for (const scheme of ['light', 'dark']) {
             await expect(page.locator(selector)).toHaveCSS('background-color', palette.bg);
             await expect(page.locator(selector)).toHaveCSS('color', palette.fg);
         }
-        await page.getByRole('button', { name: 'Upload files', exact: true }).click();
-        await expect(page.locator('#upload-menu')).toBeVisible();
-        await expect(page.locator('#upload-menu')).toHaveCSS('background-color', palette.bg);
-        await expect(page.locator('#upload-menu')).toHaveCSS('color', palette.fg);
-        await page.keyboard.press('Escape');
+        // Settings require the local editor script; their styles still follow the no-JS theme.
+        await expect(page.locator('#settings-dialog')).toHaveCSS('background-color', palette.bg);
+        await expect(page.locator('#settings-dialog')).toHaveCSS('color', palette.fg);
 
         await page.getByRole('textbox', { name: 'Page Markdown', exact: true }).fill(
             '# Theme test\n\n[A link](https://example.com)\n\n```\ncode\n```');

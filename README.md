@@ -1,6 +1,6 @@
 # Wiki
 
-A small, server-rendered Markdown wiki. Visit any page path; missing pages, including `/`, display a blank page. Click the pencil to edit, then the floppy disk to save. No accounts, frontend build, external database, or H2 console. Reading and ordinary Markdown editing work without JavaScript; a small local editor script enables file/folder pickers and file management.
+A small, server-rendered Markdown wiki. Visit any page path; missing pages, including `/`, display a blank page. Click the pencil to edit, then the floppy disk to save. No accounts, frontend build, external database, or H2 console. Reading and ordinary Markdown editing work without JavaScript; a small local editor script enables page settings, file/folder pickers, file management, and page-password changes.
 
 Pages automatically follow the browser's light or dark theme preference, including live preference changes, without JavaScript. Light styling is the fallback when no preference is supplied.
 
@@ -68,9 +68,11 @@ Inspect logs with `docker logs -f wiki`; stop cleanly with `docker stop -t 30 wi
 Without a master password (unset, empty, or whitespace-only configuration):
 
 - A blank password creates or updates a publicly editable page.
-- Entering a password on a new or currently public page permanently protects its edits.
-- Protected pages require that **same password** on every subsequent save. Blank or different passwords cannot remove or replace it.
-- Passwords are case-sensitive; spaces are significant. The limit is 1,024 Java characters.
+- Entering a password in the navbar on a new or currently public page protects its edits.
+- Ordinary saves require the current page password; the navbar field never removes or replaces an existing password.
+- In **Page settings → Password**, enter the old password, new password, and matching confirmation to change protection. Leave the old password blank for an unprotected/new page. Leave both new fields empty to remove protection (the correct old password is still required).
+- **Change password and save draft** saves the current Markdown and password together, advances the page version, and rejects stale editors/uploads. A successful change updates the navbar credential locally so uploads and further saves can continue. The server never echoes the old/new passwords; the three settings fields are cleared after a response or when settings close. A failed request leaves the Markdown draft available in the editor.
+- Passwords are case-sensitive; spaces are significant. The limit is 1,024 Java characters. Only an exactly empty new password removes protection.
 
 With a master password:
 
@@ -78,9 +80,9 @@ With a master password:
 WIKI_MASTER_PASSWORD='choose-a-long-random-secret' ./gradlew run
 ```
 
-When the configured master password is non-blank, every save requires that exact master password, including new, blank, public, and previously protected pages. The editor's one password field authenticates the save; it does not set a per-page password in this mode. Existing page hashes are retained, so removing master mode restores the previous per-page protection. Keep production secrets in your service manager's protected environment, not source control or shell history.
+When the configured master password is non-blank, every save requires that exact master password, including new, blank, public, and previously protected pages. The editor's one password field authenticates the save; it does not set a per-page password in this mode. Existing page hashes are retained, so removing master mode restores the previous per-page protection. Page-password changes are disabled in Page settings and rejected by the server in master mode; the master password can only be changed in server configuration. Keep production secrets in your service manager's protected environment, not source control or shell history.
 
-**Page/master passwords protect writes only. All pages, editors, file lists, and uploaded files are publicly readable. The administration page at `/_admin` and backup/restore API at `/_backup` require separate administrator credentials.** Uploads and file deletion use the same edit-password rules. There is no password recovery UI, revision history, page deletion, or page-password rotation feature. A configured master password can authorize edits when a page password is lost.
+**Page/master passwords protect writes only. All pages, editors, file lists, and uploaded files are publicly readable. The administration page at `/_admin` and backup/restore API at `/_backup` require separate administrator credentials.** Uploads and file deletion use the same edit-password rules. There is no password recovery UI, revision history, or page deletion. A configured master password can authorize edits when a page password is lost.
 
 ## Configuration
 
@@ -131,13 +133,13 @@ Behind a **trusted reverse proxy**, set `wiki.rate-limit.trust-forwarded-headers
 
 ### File uploads and management
 
-In the editor, enter the edit password if required, click the **upload icon**, and choose **Upload files** or **Upload folder**. Browsers provide separate native pickers for files and directories. Selecting files immediately submits a multipart upload. A successful upload saves the current Markdown draft, appends a bullet link for every uploaded file, and refreshes the editor in place with the new page version and file list. The entered password stays filled in for subsequent uploads or saves. It remains only in the current password field: the server does not echo it, and it is never placed in URLs, cookies, local storage, or session storage. Reloading or navigating to a fresh editor clears it. Editing controls are temporarily locked while an upload is in progress so newer changes cannot be lost.
+In the editor, enter the edit password in the navbar if required, click the **Page settings gear**, and choose **Upload files** or **Upload folder** in the **Files** tab. Settings always open on Files; the **Password** tab contains page-password controls. Tabs support Left/Right arrow keys and Home/End, and remain visible while the active panel scrolls. Browsers provide separate native pickers for files and directories. Selecting files immediately submits a multipart upload. A successful upload saves the current Markdown draft, appends a bullet link for every uploaded file, and refreshes the editor in place with the new page version and file list. The entered password stays filled in for subsequent uploads or saves. It remains only in the current password field: the server does not echo it, and it is never placed in URLs, cookies, local storage, or session storage. Reloading or navigating to a fresh editor clears it. Editing controls are temporarily locked while an upload is in progress so newer changes cannot be lost.
 
 - Files keep their original names. `/notes/project` plus `report.pdf` becomes `data/files/notes/project/report.pdf` with default settings.
 - Selecting a folder `photos` containing `trip/image.jpg` stores `data/files/notes/project/photos/trip/image.jpg`. The selected top-level folder is included; empty directories are not uploaded.
 - Root-page uploads go directly under the configured attachment root. Canonical percent-encoded page segments stay encoded on disk (`/a%2Fb` is not `/a/b`); empty/repeated/trailing page-path segments use a reserved `%00` directory to remain distinct.
 - Existing files at the same relative path **owned by the same page** are replaced. Their public download URLs remain unchanged. Cross-page physical path collisions, duplicate paths within a batch, and collisions with unmanaged files are rejected rather than overwritten.
-- Click the **folder icon** to list this page's files, download them, insert links, or delete individual files. Each file's **insert link icon**, to the left of Delete, inserts an escaped Markdown link at the editor cursor (replacing selected text), or appends it if the cursor position is unavailable. The file window closes and focus returns to the editor; insertion changes only the draft until you save. Deletion requires the edit password, CSRF token, and current page version. It preserves the open draft without publishing it and does not remove Markdown links; remove stale links manually. Deletion advances the page version to invalidate older editors/uploads.
+- The **Files** tab in the same **Page settings** window lists this page's files for downloading, link insertion, or deletion. Each file's **insert link icon**, to the left of Delete, inserts an escaped Markdown link at the editor cursor (replacing selected text), or appends it if the cursor position is unavailable. The settings window closes and focus returns to the editor; insertion changes only the draft until you save. Deletion requires the edit password, CSRF token, and current page version. It preserves the open draft without publishing it and does not remove Markdown links; remove stale links manually. Deletion advances the page version to invalidate older editors/uploads.
 - Each file and the combined file data in a request are limited to **2 GiB (2,147,483,648 bytes)**. There are at most 1,000 files per batch and 1 MiB of manifest metadata. The page-content limit applies separately. Files are spooled to disk, then copied in bounded chunks; no multi-gigabyte byte arrays are created.
 - Relative filenames are limited to 4,096 characters and individual path segments to 255 UTF-8 bytes, also subject to the host filesystem's limits. Absolute paths, dot segments, empty segments, backslashes, colons, control characters, and symlink targets/ancestors are rejected. Validated original filenames are never silently renamed.
 - Downloads use stable UUIDv7 URLs, `application/octet-stream`, `Content-Disposition: attachment` with the original filename, `nosniff`, and a sandbox CSP. Uploaded HTML/SVG/scripts are never served as active same-origin documents.
@@ -151,7 +153,7 @@ Provide sufficient temporary-disk capacity: Micronaut's multipart spool uses the
 - `GET /anything/nested` displays the page, or a blank page without inserting a database row.
 - `GET /anything/nested.md` downloads the exact stored Markdown for `/anything/nested` as `text/markdown; charset=UTF-8`, with an attachment filename of `nested.md`. The final URL slug is used for the filename (percent-encoded slugs stay encoded). Missing pages return an empty Markdown file without creating a page.
 - `GET /anything/nested/editor` displays the full-page editor. `/anything/nested.md/editor` edits the same page, with the same passwords, version checks, and file management. Saving redirects to the normal HTML URL `/anything/nested`, not the Markdown download.
-- `POST /anything/nested` saves a URL-encoded form and returns **303** to the page (Post/Redirect/Get). Posting directly to `/anything/nested.md` also saves the same page and redirects to its HTML URL.
+- `POST /anything/nested` saves a URL-encoded form and returns **303** to the page (Post/Redirect/Get). Posting directly to `/anything/nested.md` also saves the same page and redirects to its HTML URL. The page-settings password action posts to this same URL with `action=change-password`, `oldPassword`, `newPassword`, `confirmPassword`, `content`, `version`, and `csrf`; it returns the refreshed editor HTML (**200** on success), consumed in place by the editor script.
 - `/editor` edits `/`; posting to `/` saves the root page. `/.md` downloads the root as `index.md`; `/.md/editor` edits the root. For a trailing-slash page `/notes/`, `/notes/.md` downloads `notes.md`.
 - `POST /_files/upload` accepts indexed multipart files and a relative-path manifest; `POST /_files/delete` deletes an owned file; `GET /_files/{uuid}` downloads a file.
 - `GET /_backup` downloads a ZIP of the data directory, including a consistent live database snapshot; `POST /_backup` restores a raw ZIP or a multipart `file` field. Both require administrator Basic authentication (see below).
@@ -317,6 +319,7 @@ Micrometer publishes metrics to the **local JVM's JMX MBean server** (domain `me
 - `wiki.database.read` / `wiki.database.write` timers
 - `wiki.markdown.render` timer
 - `wiki.saves` counters, tagged by bounded result values
+- `wiki.password.changes` counter tagged by `success` / `rejected`; password changes also log protection state or rejection status, never credentials
 - `wiki.work.active` and `wiki.requests.rejected` (concurrency admission)
 - `wiki.requests.rate_limited` counter (429 responses) and `wiki.rate_limit.tracked_ips` gauge; IPs are never used as metric tags. The first rejection for each IP/window logs a warning.
 - `wiki.files.upload` timer, `wiki.files.uploaded`, `wiki.files.bytes`, `wiki.files.deleted`, and `wiki.files.failures` counters
@@ -336,6 +339,8 @@ Micrometer publishes metrics to the **local JVM's JMX MBean server** (domain `me
 Tests cover root/blank pages; nested, encoded, repeated- and trailing-slash paths; escaped textarea round-trips including leading newlines; create/update/protection; master precedence; invalid CSRF; malicious HTML; UTF-8 byte boundaries; forms exceeding framework default buffers; stale edits; upload admission/disconnection cleanup; and file-database restart persistence. Backup/restore tests additionally verify default/custom administrator authentication, the authenticated admin page, browser-navigation downloads, dated filenames, nested/Unicode files, empty directories, raw/multipart HTTP restores, CSRF/confirmation enforcement for browser restores, Post/Redirect/Get, escaped error/view output, complete data replacement, live-database restoration with attachment metadata, real V1/V2 backup upgrades and restart persistence, rejection of newer schemas (including numeric/dotted versions), failed migration isolation, modified-history rejection, rollback after an installed-database read failure, symlink/traversal/size-limit rejection, incomplete-configuration rejection, and maintenance admission/draining. Tests use isolated in-memory/temporary file databases, never `./data/wiki`.
 
 Rate-limit tests verify configuration/defaults, independent IPv4/IPv6 budgets, concurrent requests, exact window expiry, rounded retry delays, idle cleanup, spoofed forwarding headers ignored by default, trusted forwarding-header precedence/chains, address normalization and fallback, and real HTTP rejection across methods and paths. Other functional/browser tests raise the limit to avoid consuming their shared loopback budget.
+
+Page-settings tests cover password creation, rotation, removal, confirmation mismatches, incorrect old passwords, CSRF, content/password limits, stale versions, master-mode rejection, and uploads racing with a password change. Browser coverage in [`tests/e2e/settings.spec.cjs`](tests/e2e/settings.spec.cjs) exercises the tabbed settings window, default Files view, keyboard navigation, small viewports, retained edit credentials, refreshed file controls, busy-state locking, and network failures. Password results stay on the Password tab; reopening settings resets the view to Files.
 
 #### Playwright end-to-end test
 

@@ -5,7 +5,7 @@ const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 
 async function pickFiles(page, files, folder = false) {
-    await page.getByRole('button', { name: 'Upload files', exact: true }).click();
+    await page.getByRole('button', { name: 'Page settings', exact: true }).click();
     const chooser = page.waitForEvent('filechooser');
     await page.getByRole('button', { name: folder ? 'Upload folder' : 'Upload files', exact: true })
         .filter({ visible: true }).last().click();
@@ -32,13 +32,13 @@ test('upload files saves the draft, replaces original names, downloads and delet
     await page.reload();
     await expect(page.locator('input[name=password]')).toHaveValue('');
     await expect(editor).toHaveValue(/日本/);
-    await page.getByRole('button', { name: 'Manage files', exact: true }).click();
+    await page.getByRole('button', { name: 'Page settings', exact: true }).click();
     const manager = page.getByRole('dialog');
     await expect(manager.locator('.file-list li')).toHaveCount(2);
     await expect(manager.getByRole('link', { name: '日本 %22 "quoted".txt', exact: true })).toBeVisible();
     for (const viewport of [{ width: 320, height: 240 }, { width: 481, height: 320 }, { width: 1280, height: 720 }]) {
         await page.setViewportSize(viewport);
-        for (const locator of [manager, manager.getByRole('button', { name: 'Close files', exact: true })]) {
+        for (const locator of [manager, manager.getByRole('button', { name: 'Close page settings', exact: true })]) {
             const box = await locator.boundingBox();
             expect(box.x).toBeGreaterThanOrEqual(0);
             expect(box.y).toBeGreaterThanOrEqual(0);
@@ -51,7 +51,7 @@ test('upload files saves the draft, replaces original names, downloads and delet
     const downloaded = page.waitForEvent('download');
     await manager.getByRole('link', { name: 'notes [one].txt', exact: true }).click();
     expect((await downloaded).suggestedFilename()).toBe('notes [one].txt');
-    await page.getByRole('button', { name: 'Close files', exact: true }).click();
+    await page.getByRole('button', { name: 'Close page settings', exact: true }).click();
 
     await editor.fill('Edited draft for replacement');
     await page.locator('input[name=password]').fill('file-secret');
@@ -62,14 +62,14 @@ test('upload files saves the draft, replaces original names, downloads and delet
 
     await editor.fill('Unsaved draft during deletion');
     await page.locator('input[name=password]').fill('file-secret');
-    await page.getByRole('button', { name: 'Manage files', exact: true }).click();
+    await page.getByRole('button', { name: 'Page settings', exact: true }).click();
     page.once('dialog', dialog => dialog.accept());
     await manager.getByRole('button', { name: 'Delete notes [one].txt', exact: true }).click();
     await expect(editor).toHaveValue('Unsaved draft during deletion');
     expect((await page.request.get(originalUrl)).status()).toBe(404);
-    await page.getByRole('button', { name: 'Manage files', exact: true }).click();
+    await page.getByRole('button', { name: 'Page settings', exact: true }).click();
     await expect(page.getByRole('dialog').locator('.file-list li')).toHaveCount(1);
-    await page.getByRole('button', { name: 'Close files', exact: true }).click();
+    await page.getByRole('button', { name: 'Close page settings', exact: true }).click();
     await page.getByRole('button', { name: 'Save page', exact: true }).click();
     await expect(page.getByRole('alert')).toBeVisible(); // Password was intentionally not echoed after deletion.
     await expect(editor).toHaveValue('Unsaved draft during deletion');
@@ -84,7 +84,7 @@ test('file insert buttons add escaped Markdown at the cursor without saving and 
     // The upload replaces the editor and dialog contents; insertion must use the new elements.
     await expect(editor).toHaveValue(/日本/);
     const stored = await (await page.request.get(slug + '.md')).text();
-    await page.getByRole('button', { name: 'Manage files', exact: true }).click();
+    await page.getByRole('button', { name: 'Page settings', exact: true }).click();
     const manager = page.getByRole('dialog');
     const url = await manager.getByRole('link', { name: filename, exact: true }).getAttribute('href');
     const link = '[日本 \\[one\\]\\_\\*\\<tag\\>\\.txt](' + url + ')';
@@ -99,7 +99,7 @@ test('file insert buttons add escaped Markdown at the cursor without saving and 
         expect(left.x + left.width).toBeLessThanOrEqual(right.x);
         expect(right.x + right.width).toBeLessThanOrEqual(width);
     }
-    await manager.getByRole('button', { name: 'Close files', exact: true }).click();
+    await manager.getByRole('button', { name: 'Close page settings', exact: true }).click();
 
     const cases = [
         { draft: 'Before after', start: 7, end: 7 },
@@ -111,7 +111,7 @@ test('file insert buttons add escaped Markdown at the cursor without saving and 
     for (const [index, { draft, start, end }] of cases.entries()) {
         await editor.fill(draft);
         await editor.evaluate((element, range) => element.setSelectionRange(...range), [start, end]);
-        await page.getByRole('button', { name: 'Manage files', exact: true }).click();
+        await page.getByRole('button', { name: 'Page settings', exact: true }).click();
         if (index === 0) {
             // Click the icon itself, not just the surrounding button.
             await insert.locator('svg').click();
@@ -154,7 +154,7 @@ test('file insertion appends the link when cursor lookup or range insertion is u
                 });
             }
         }, failure);
-        await page.getByRole('button', { name: 'Manage files', exact: true }).click();
+        await page.getByRole('button', { name: 'Page settings', exact: true }).click();
         const manager = page.getByRole('dialog');
         const url = await manager.getByRole('link', { name: 'file.txt', exact: true }).getAttribute('href');
         await manager.getByRole('button', { name: 'Insert file.txt', exact: true }).click();
@@ -183,12 +183,12 @@ test('directory picker mirrors selected folder structure and leaves the user edi
         await expect(page).toHaveURL(baseURL + slug + '/editor');
         await expect.poll(async () => (await editor.inputValue()).replaceAll('\\', ''))
             .toContain('selected-folder/nested/deeper/leaf.txt');
-        await page.getByRole('button', { name: 'Manage files', exact: true }).click();
+        await page.getByRole('button', { name: 'Page settings', exact: true }).click();
         const manager = page.getByRole('dialog');
         await expect(manager.locator('.file-list li')).toHaveCount(2);
         await expect(manager.getByRole('link', { name: 'selected-folder/root.txt', exact: true })).toBeVisible();
         await expect(manager.getByRole('link', { name: 'selected-folder/nested/deeper/leaf.txt', exact: true })).toBeVisible();
-        await page.getByRole('button', { name: 'Close files', exact: true }).click();
+        await page.getByRole('button', { name: 'Close page settings', exact: true }).click();
         await editor.fill((await editor.inputValue()) + '\nContinuing to edit');
         await page.getByRole('button', { name: 'Save page', exact: true }).click();
         await expect(page).toHaveURL(baseURL + slug);
@@ -258,6 +258,6 @@ test('incorrect upload password keeps the draft and does not create a file', asy
     await expect(page.getByRole('textbox', { name: 'Page Markdown', exact: true })).toHaveValue('Keep this draft');
     await expect(page.locator('input[name=password]')).toHaveValue('wrong');
     await expect(page.getByRole('button', { name: 'Save page', exact: true })).toBeEnabled();
-    await page.getByRole('button', { name: 'Manage files', exact: true }).click();
+    await page.getByRole('button', { name: 'Page settings', exact: true }).click();
     await expect(page.getByRole('dialog')).toContainText('No files uploaded');
 });
