@@ -1,6 +1,7 @@
 package com.teacai.wiki.controller;
 
 import com.teacai.wiki.config.WikiProperties;
+import com.teacai.wiki.http.BrowserCache;
 import com.teacai.wiki.model.Page;
 import com.teacai.wiki.service.AttachmentStorage;
 import com.teacai.wiki.service.CsrfService;
@@ -128,9 +129,12 @@ public class FileController {
 
     // Include the navigation Accept type so the HTML catch-all page route cannot win negotiation.
     @Get(value = "/{fileId}", produces = {MediaType.APPLICATION_OCTET_STREAM, MediaType.TEXT_HTML})
-    public HttpResponse<StreamedFile> download(String fileId) throws IOException {
-        // Never serve uploaded HTML/SVG/JS as active same-origin content.
-        return HttpResponse.ok(files.download(id(fileId))).contentType(MediaType.APPLICATION_OCTET_STREAM_TYPE)
+    public HttpResponse<StreamedFile> download(String fileId, HttpRequest<?> request) throws IOException {
+        var download = files.download(id(fileId), request.getHeaders().getAll("If-None-Match"));
+        var response = download.stream() == null ? HttpResponse.<StreamedFile>status(HttpStatus.NOT_MODIFIED)
+                : HttpResponse.ok(download.stream()).contentType(MediaType.APPLICATION_OCTET_STREAM_TYPE);
+        // Never serve uploaded HTML/SVG/JS as active same-origin content, including cached downloads.
+        return response.header("Cache-Control", BrowserCache.CONTROL).header("ETag", download.etag())
                 .header("Content-Security-Policy", "sandbox allow-downloads; default-src 'none'; frame-ancestors 'none'");
     }
 

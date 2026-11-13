@@ -1,6 +1,7 @@
 package com.teacai.wiki.service;
 
 import com.teacai.wiki.config.WikiProperties;
+import com.teacai.wiki.http.BrowserCache;
 import com.teacai.wiki.model.Page;
 import com.teacai.wiki.model.PageFile;
 import com.teacai.wiki.repository.FileRepository;
@@ -17,6 +18,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -32,6 +34,8 @@ public class FileService {
     private final WikiProperties properties;
     private final MeterRegistry metrics;
     private final ContentCache cache;
+    // Validators need not survive restarts; this also prevents inode reuse from matching an older process.
+    private final String downloadEpoch = UUID.randomUUID().toString();
 
     public FileService(PageService pages, FileRepository repository, AttachmentStorage storage,
                        WikiProperties properties, MeterRegistry metrics, ContentCache cache) {
@@ -141,27 +145,37 @@ public class FileService {
         }
     }
 
-    public StreamedFile download(UUID id) throws IOException {
+    public Download download(UUID id, List<String> ifNoneMatch) throws IOException {
         synchronized (pages) {
             String key = "file:" + id;
             CachedFile cached = cache.get(key, CachedFile.class);
-            if (cached != null) return cached.stream();
+            if (cached != null) {
+                return new Download(cached.etag(), BrowserCache.matches(ifNoneMatch, cached.etag()) ? null : cached.stream());
+            }
             PageFile file = repository.find(id)
                     .orElseThrow(() -> new HttpStatusException(HttpStatus.NOT_FOUND, "File not found"));
+            // Use a weak filesystem validator, not a full hash of a potentially 2 GiB download.
+            // Replacements install a staged file under the write monitor, changing its identity/timestamps.
+            String revision = downloadEpoch + ":" + id + ":" + storage.revision(file);
+            String etag = "W/" + BrowserCache.etag(revision.getBytes(StandardCharsets.UTF_8));
+            if (BrowserCache.matches(ifNoneMatch, etag)) return new Download(etag, null);
             if (file.sizeBytes() < Integer.MAX_VALUE && cache.canCache(key, file.sizeBytes())) {
                 byte[] bytes;
                 try (var input = storage.open(file)) { bytes = input.readNBytes((int) file.sizeBytes() + 1); }
                 if (bytes.length != file.sizeBytes()) throw new IOException("Attachment size changed on disk");
-                cached = new CachedFile(file, bytes);
+                cached = new CachedFile(file, bytes, etag);
                 cache.put(key, cached, bytes.length);
-                return cached.stream();
+                return new Download(etag, cached.stream());
             }
-            return new StreamedFile(storage.open(file), MediaType.APPLICATION_OCTET_STREAM_TYPE,
-                    -1, file.sizeBytes()).attach(file.filename());
+            return new Download(etag, new StreamedFile(storage.open(file), MediaType.APPLICATION_OCTET_STREAM_TYPE,
+                    -1, file.sizeBytes()).attach(file.filename()));
         }
     }
 
-    private record CachedFile(PageFile file, byte[] bytes) {
+    /** A null stream denotes a matching validator; no file handle has been opened. */
+    public record Download(String etag, StreamedFile stream) {}
+
+    private record CachedFile(PageFile file, byte[] bytes, String etag) {
         StreamedFile stream() {
             return new StreamedFile(new ByteArrayInputStream(bytes), MediaType.APPLICATION_OCTET_STREAM_TYPE,
                     -1, bytes.length).attach(file.filename());

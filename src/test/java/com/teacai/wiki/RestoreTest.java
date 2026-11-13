@@ -102,8 +102,11 @@ class RestoreTest {
             var original = context.getBean(FileRepository.class).list("/restored").getFirst();
             upload(context, "newer data");
             pages.savePage("/", "# Newer home", "", pages.getPage("/").version());
+            String newerEtag;
             try (var http = new HttpTestSupport(server.getURI())) {
-                assertEquals("newer data", http.get(original.url()).body());
+                var download = http.get(original.url());
+                assertEquals("newer data", download.body());
+                newerEtag = download.headers().firstValue("etag").orElseThrow();
             }
             Files.writeString(root.resolve("unmanaged.txt"), "newer unmanaged");
             Files.writeString(root.resolve("created-after-backup.txt"), "remove me");
@@ -115,6 +118,11 @@ class RestoreTest {
             try (var http = new HttpTestSupport(server.getURI())) {
                 assertEquals("original", http.get(original.url()).body());
             }
+            var revalidated = client.send(HttpRequest.newBuilder(server.getURI().resolve(original.url()))
+                    .header("If-None-Match", newerEtag).GET().build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, revalidated.statusCode());
+            assertEquals("original", revalidated.body());
+            assertNotEquals(newerEtag, revalidated.headers().firstValue("etag").orElseThrow());
             assertEquals(original, context.getBean(FileRepository.class).list("/restored").getFirst());
             assertEquals("original", Files.readString(root.resolve("files/restored/folder/file.txt")));
             assertEquals("original unmanaged", Files.readString(root.resolve("unmanaged.txt")));

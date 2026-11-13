@@ -77,6 +77,20 @@ public class AttachmentStorage {
         return Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS);
     }
 
+    /** Metadata changes on staged replacement, including equal-size writes within the same second. */
+    public String revision(PageFile file) throws IOException {
+        var path = resolve(file.storageKey());
+        try {
+            var attributes = Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class,
+                    LinkOption.NOFOLLOW_LINKS);
+            if (!attributes.isRegularFile()) throw new HttpStatusException(HttpStatus.NOT_FOUND, "File not found");
+            return attributes.fileKey() + ":" + attributes.creationTime() + ":"
+                    + attributes.lastModifiedTime() + ":" + attributes.size();
+        } catch (java.nio.file.NoSuchFileException e) {
+            throw new HttpStatusException(HttpStatus.NOT_FOUND, "File not found");
+        }
+    }
+
     public Batch stage(List<Source> sources) throws IOException {
         Batch batch = new Batch();
         try {

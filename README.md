@@ -118,6 +118,14 @@ The page limit is checked independently of `Content-Length`, after form decoding
 
 The committed icon is `src/main/resources/static/favicon.ico`. Regenerate it with `python3 scripts/generate-favicon.py` (Python standard library only; not required to build or run the application).
 
+### Browser caching
+
+Bundled CSS, JavaScript, the favicon, and public attachment downloads use `Cache-Control: public, no-cache` with an `ETag`. Despite its name, **`no-cache` allows browsers to store the response**, but requires validation before reuse. A matching `If-None-Match` returns **304 Not Modified** without transferring the resource again. This avoids stale CSS/JavaScript after deployment and stale attachments when a file is replaced at its existing download URL. Pages, editors, administration, backups, and error responses remain `no-store`.
+
+Static asset validators are content hashes. Attachment validators are weak, process-local filesystem revision identifiers: large downloads do not need to be hashed or loaded into memory. Replacements and restores invalidate previous attachment validators; a restart may cause an unchanged attachment to be downloaded once again. Downloads retain their attachment disposition, sandbox policy, and MIME protections. Conditional requests still pass through rate limiting and maintenance admission.
+
+Browser caching is independent of the in-memory cache below and remains enabled even when either in-memory cache limit is zero.
+
 ### In-memory content cache
 
 Pages, attachment downloads, and bundled CSS/JavaScript/favicon assets share a thread-safe, process-local cache. Configure the limits in `application.yml` or through the environment variables above:
@@ -128,7 +136,7 @@ wiki:
   cache-max-size-mb: 50
 ```
 
-Both settings use **binary MB** (1 MB = 1,048,576 bytes), accept non-negative whole numbers, and take effect on restart. Setting **either value to zero disables all content caching**, including the home page. This does not change HTTP `Cache-Control: no-store`, rate limiting, CSRF, or password/version checks; editor responses and request-specific tokens are never cached.
+Both settings use **binary MB** (1 MB = 1,048,576 bytes), accept non-negative whole numbers, and take effect on restart. Setting **either value to zero disables all in-memory content caching**, including the home page. This does not change browser caching, rate limiting, CSRF, or password/version checks; editor responses and request-specific tokens are never cached.
 
 - Pages retain their Markdown, current version/protection metadata, and **sanitized HTML after Markdown processing**. The page payload weight is the combined UTF-8 size of Markdown and rendered HTML; files/assets use their raw byte length. Empty entries have a minimum weight of one byte. The budget measures payload, not total JVM heap: object/key overhead and in-flight processing require additional memory.
 - Eligible content is cached on its first read. Successful page saves (including password changes and uploads) immediately recompute and replace the cached page. Failed/conflicting writes do not publish drafts into the cache. Attachment replacements and deletions invalidate the old cached download before another request can read it.
@@ -365,7 +373,7 @@ Micrometer publishes metrics to the **local JVM's JMX MBean server** (domain `me
 
 Tests cover root/blank pages; nested, encoded, repeated- and trailing-slash paths; escaped textarea round-trips including leading newlines; create/update/protection; master precedence; invalid CSRF; malicious HTML; UTF-8 byte boundaries; forms exceeding framework default buffers; stale edits; upload admission/disconnection cleanup; and file-database restart persistence. Backup/restore tests additionally verify default/custom administrator authentication, the authenticated admin page, browser-navigation downloads, dated filenames, nested/Unicode files, empty directories, raw/multipart HTTP restores, CSRF/confirmation enforcement for browser restores, Post/Redirect/Get, escaped error/view output, complete data replacement, live-database restoration with attachment metadata, real V1/V2 backup upgrades and restart persistence, rejection of newer schemas (including numeric/dotted versions), failed migration isolation, modified-history rejection, rollback after an installed-database read failure, symlink/traversal/size-limit rejection, incomplete-configuration rejection, and maintenance admission/draining. Tests use isolated in-memory/temporary file databases, never `./data/wiki`.
 
-Cache tests verify MB configuration/defaults, either-zero disabling, processed-page byte limits, cache hits without repeated database reads/rendering, eager save-time refresh, conflict isolation, FIFO eviction, replacement accounting, concurrent admissions, pinned home-page behavior, attachment invalidation, static assets, and restore invalidation.
+Cache tests verify MB configuration/defaults, either-zero disabling, processed-page byte limits, cache hits without repeated database reads/rendering, eager save-time refresh, conflict isolation, FIFO eviction, replacement accounting, concurrent admissions, pinned home-page behavior, attachment invalidation, static assets, and restore invalidation. Browser-cache tests additionally verify strong/weak ETag matching, conditional 304 responses, security headers, same-size attachment replacement, deletion, restore, streamed large files, and operation with the in-memory cache disabled.
 
 Rate-limit tests verify configuration/defaults, independent IPv4/IPv6 budgets, concurrent requests, exact window expiry, rounded retry delays, idle cleanup, spoofed forwarding headers ignored by default, trusted forwarding-header precedence/chains, address normalization and fallback, and real HTTP rejection across methods and paths. Other functional/browser tests raise the limit to avoid consuming their shared loopback budget.
 

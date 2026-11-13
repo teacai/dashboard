@@ -18,6 +18,11 @@ public class SecurityHeaders {
         // Keep same-origin form submissions working without leaking referrers to other origins.
         response.header("Referrer-Policy", "same-origin");
         response.header("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-        response.header("Cache-Control", "no-store");
+        // Only successful asset/download handlers opt in to browser caching. Errors and dynamic views
+        // retain no-store even if a framework error response copied headers from the original response.
+        int status = response.code();
+        if ((status != 200 && status != 304) || !response.getHeaders().contains("Cache-Control")) {
+            response.header("Cache-Control", "no-store");
+        }
     }
 }
