@@ -18,6 +18,7 @@ class RequestAdmissionTest {
             assertNull(admission.admit(second));
             assertEquals(503, admission.admit(HttpRequest.GET("/three")).code());
             assertNull(admission.admit(HttpRequest.GET("/_assets/style.css")));
+            assertNull(admission.admit(HttpRequest.GET("/favicon.ico")));
             var terminated = new HttpRequestTerminatedEvent(first);
             admission.onApplicationEvent(terminated);
             admission.onApplicationEvent(terminated);

@@ -94,16 +94,27 @@ class RestoreTest {
         try (var server = ApplicationContext.run(EmbeddedServer.class, config(), "test"); var client = HttpClient.newHttpClient()) {
             var context = server.getApplicationContext();
             Path root = directory.resolve("data");
+            var pages = context.getBean(PageService.class);
+            pages.savePage("/", "# Original home", "", -1);
             upload(context, "original");
             Files.writeString(root.resolve("unmanaged.txt"), "original unmanaged");
             byte[] archive = request(client, server.getURI(), null, authorization(), null).body();
             var original = context.getBean(FileRepository.class).list("/restored").getFirst();
             upload(context, "newer data");
+            pages.savePage("/", "# Newer home", "", pages.getPage("/").version());
+            try (var http = new HttpTestSupport(server.getURI())) {
+                assertEquals("newer data", http.get(original.url()).body());
+            }
             Files.writeString(root.resolve("unmanaged.txt"), "newer unmanaged");
             Files.writeString(root.resolve("created-after-backup.txt"), "remove me");
             var response = request(client, server.getURI(), archive, authorization(), "application/zip");
             assertEquals(200, response.statusCode(), new String(response.body(), StandardCharsets.UTF_8));
             assertTrue(context.getBean(PageService.class).getPage("/restored").content().startsWith("original"));
+            assertEquals("<h1>Original home</h1>",
+                    context.getBean(ContentCache.class).get("page:/", PageService.RenderedPage.class).html());
+            try (var http = new HttpTestSupport(server.getURI())) {
+                assertEquals("original", http.get(original.url()).body());
+            }
             assertEquals(original, context.getBean(FileRepository.class).list("/restored").getFirst());
             assertEquals("original", Files.readString(root.resolve("files/restored/folder/file.txt")));
             assertEquals("original unmanaged", Files.readString(root.resolve("unmanaged.txt")));

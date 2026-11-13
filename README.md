@@ -98,6 +98,8 @@ See [`src/main/resources/application.yml`](src/main/resources/application.yml). 
 | `WIKI_DB_PASSWORD` | empty | H2 connection password; not a page password or file-encryption key |
 | `WIKI_MASTER_PASSWORD` | empty | Unset/blank enables per-page mode; non-blank overrides page passwords for all saves |
 | `WIKI_MAX_PAGE_SIZE` | `104857600` | Maximum **decoded Markdown UTF-8 bytes** (100 MiB) |
+| `WIKI_CACHE_MAX_FILE_SIZE_MB` | `1` | Maximum cached file/page payload in binary MB (`wiki.cache-max-file-size-mb`); zero disables caching |
+| `WIKI_CACHE_MAX_SIZE_MB` | `50` | Shared in-memory payload budget in binary MB (`wiki.cache-max-size-mb`); zero disables caching |
 | `WIKI_DATA_DIRECTORY` | `./data` | Backup/restore data root; must contain the database and attachment root |
 | `WIKI_ADMIN_USERNAME` | `admin` | Basic-auth administrator for `/_admin` and backup/restore (`wiki.admin-username`) |
 | `WIKI_ADMIN_PASSWORD` | `admin112` | Basic-auth administrator password (`wiki.admin-password`); **change before deployment** |
@@ -109,6 +111,30 @@ See [`src/main/resources/application.yml`](src/main/resources/application.yml). 
 | `WIKI_SECURE_COOKIES` | `false` | Set `true` behind an HTTPS-terminating proxy; direct HTTPS also sets Secure automatically |
 
 The page limit is checked independently of `Content-Length`, after form decoding, and includes appended attachment links. Over-limit ordinary saves return **413** without saving. Upload errors handled after form parsing preserve the editor draft; parser/transport failures may not. A URL-encoded UTF-8 byte can occupy three wire bytes (`%XX`); if increasing the page limit, increase the buffer cap to at least `3 × page limit + 65536`, and the transport limit to at least the larger of that value and `max upload size + page limit + multipart overhead`. Adjust reverse-proxy limits too. These are byte counts, not character counts.
+
+### Application favicon
+
+`/favicon.ico` serves a turquoise (`#40E0D0`) square with a transparent lowercase **w** cutout. Page, editor, and administration views link to it. The ICO includes antialiased 16, 32, 48, 64, 128, and 256 px RGBA images and uses the shared static-asset cache. Its URL is reserved and cannot be edited as a wiki page.
+
+The committed icon is `src/main/resources/static/favicon.ico`. Regenerate it with `python3 scripts/generate-favicon.py` (Python standard library only; not required to build or run the application).
+
+### In-memory content cache
+
+Pages, attachment downloads, and bundled CSS/JavaScript/favicon assets share a thread-safe, process-local cache. Configure the limits in `application.yml` or through the environment variables above:
+
+```yaml
+wiki:
+  cache-max-file-size-mb: 1
+  cache-max-size-mb: 50
+```
+
+Both settings use **binary MB** (1 MB = 1,048,576 bytes), accept non-negative whole numbers, and take effect on restart. Setting **either value to zero disables all content caching**, including the home page. This does not change HTTP `Cache-Control: no-store`, rate limiting, CSRF, or password/version checks; editor responses and request-specific tokens are never cached.
+
+- Pages retain their Markdown, current version/protection metadata, and **sanitized HTML after Markdown processing**. The page payload weight is the combined UTF-8 size of Markdown and rendered HTML; files/assets use their raw byte length. Empty entries have a minimum weight of one byte. The budget measures payload, not total JVM heap: object/key overhead and in-flight processing require additional memory.
+- Eligible content is cached on its first read. Successful page saves (including password changes and uploads) immediately recompute and replace the cached page. Failed/conflicting writes do not publish drafts into the cache. Attachment replacements and deletions invalidate the old cached download before another request can read it.
+- Admissions evict the **oldest inserted entries first**, across content types, until enough space is available. Hits do not refresh age; replacement does. Entries exceeding either limit are served without being retained. Arbitrary missing page URLs are not cached.
+- **The root/home page is preloaded at startup and pinned whenever caching is enabled**, including when it is blank or edited. It is exempt from the per-entry size limit. It counts toward the shared budget, but if it alone exceeds that budget, it remains cached and all other entries are evicted/refused until it shrinks. This is the sole exception to the total payload limit.
+- Successful backup restore clears cached pages/files/assets and reloads the restored home page before requests resume. There is no disk persistence or cross-process invalidation; modify content through the application, and restart after out-of-band database/filesystem edits.
 
 ### Request rate limiting
 
@@ -317,7 +343,8 @@ Logs are structured JSON on stdout and include startup, migrations, successful s
 Micrometer publishes metrics to the **local JVM's JMX MBean server** (domain `metrics`), avoiding a public HTTP management namespace. Inspect via local JConsole/JMC. Important metrics include:
 
 - `wiki.database.read` / `wiki.database.write` timers
-- `wiki.markdown.render` timer
+- `wiki.markdown.render` timer (cache misses and save-time refreshes)
+- `wiki.cache.bytes` / `wiki.cache.entries` gauges, `wiki.cache.requests` counter tagged by `hit` / `miss`, and `wiki.cache.evictions` counter; cache startup logs include enabled state and configured MB limits
 - `wiki.saves` counters, tagged by bounded result values
 - `wiki.password.changes` counter tagged by `success` / `rejected`; password changes also log protection state or rejection status, never credentials
 - `wiki.work.active` and `wiki.requests.rejected` (concurrency admission)
@@ -337,6 +364,8 @@ Micrometer publishes metrics to the **local JVM's JMX MBean server** (domain `me
 ```
 
 Tests cover root/blank pages; nested, encoded, repeated- and trailing-slash paths; escaped textarea round-trips including leading newlines; create/update/protection; master precedence; invalid CSRF; malicious HTML; UTF-8 byte boundaries; forms exceeding framework default buffers; stale edits; upload admission/disconnection cleanup; and file-database restart persistence. Backup/restore tests additionally verify default/custom administrator authentication, the authenticated admin page, browser-navigation downloads, dated filenames, nested/Unicode files, empty directories, raw/multipart HTTP restores, CSRF/confirmation enforcement for browser restores, Post/Redirect/Get, escaped error/view output, complete data replacement, live-database restoration with attachment metadata, real V1/V2 backup upgrades and restart persistence, rejection of newer schemas (including numeric/dotted versions), failed migration isolation, modified-history rejection, rollback after an installed-database read failure, symlink/traversal/size-limit rejection, incomplete-configuration rejection, and maintenance admission/draining. Tests use isolated in-memory/temporary file databases, never `./data/wiki`.
+
+Cache tests verify MB configuration/defaults, either-zero disabling, processed-page byte limits, cache hits without repeated database reads/rendering, eager save-time refresh, conflict isolation, FIFO eviction, replacement accounting, concurrent admissions, pinned home-page behavior, attachment invalidation, static assets, and restore invalidation.
 
 Rate-limit tests verify configuration/defaults, independent IPv4/IPv6 budgets, concurrent requests, exact window expiry, rounded retry delays, idle cleanup, spoofed forwarding headers ignored by default, trusted forwarding-header precedence/chains, address normalization and fallback, and real HTTP rejection across methods and paths. Other functional/browser tests raise the limit to avoid consuming their shared loopback budget.
 

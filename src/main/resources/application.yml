@@ -41,6 +41,9 @@ flyway:
       enabled: true
 
 wiki:
+  # Binary MB (1 MB = 1,048,576 bytes). Either zero disables the shared content cache.
+  cache-max-file-size-mb: ${WIKI_CACHE_MAX_FILE_SIZE_MB:1}
+  cache-max-size-mb: ${WIKI_CACHE_MAX_SIZE_MB:50}
   rate-limit:
     requests-per-minute: ${WIKI_RATE_LIMIT_REQUESTS_PER_MINUTE:60}
     # Enable only behind a trusted proxy that sanitizes forwarding headers.

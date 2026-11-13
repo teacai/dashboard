@@ -4,8 +4,10 @@ import com.teacai.wiki.config.WikiProperties;
 import com.teacai.wiki.model.Page;
 import com.teacai.wiki.repository.PageRepository;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micronaut.context.event.StartupEvent;
 import io.micronaut.http.HttpStatus;
 import io.micronaut.http.exceptions.HttpStatusException;
+import io.micronaut.runtime.event.annotation.EventListener;
 import jakarta.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,26 +22,62 @@ public class PageService {
     private final PasswordService passwords;
     private final WikiProperties properties;
     private final MeterRegistry metrics;
+    private final ContentCache cache;
+    private final MarkdownRenderer markdown;
     private final String masterHash;
     private double authTokens = 10;
     private long lastRefill = System.nanoTime();
 
     public PageService(PageRepository repository, PasswordService passwords,
-                       WikiProperties properties, MeterRegistry metrics) {
+                       WikiProperties properties, MeterRegistry metrics, ContentCache cache, MarkdownRenderer markdown) {
         this.repository = repository;
         this.passwords = passwords;
         this.properties = properties;
         this.metrics = metrics;
+        this.cache = cache;
+        this.markdown = markdown;
         String master = properties.getMasterPassword();
         masterHash = master == null || master.isBlank() ? null : passwords.hashPassword(master);
     }
 
     public boolean usesMasterPassword() { return masterHash != null; }
 
-    public Page getPage(String path) {
-        return metrics.timer("wiki.database.read").record(() -> repository.findByPath(path)
-                .orElse(new Page(path, "", null, -1)));
+    @EventListener
+    public void warmHome(StartupEvent event) {
+        if (cache.isEnabled()) getPage("/");
     }
+
+    public synchronized Page getPage(String path) { return load(path, false).page(); }
+
+    public synchronized RenderedPage getRenderedPage(String path) { return load(path, true); }
+
+    private RenderedPage load(String path, boolean needsHtml) {
+        RenderedPage cached = cache.get("page:" + path, RenderedPage.class);
+        if (cached != null) return cached;
+        Page page = metrics.timer("wiki.database.read").record(() -> repository.findByPath(path)
+                .orElse(new Page(path, "", null, -1)));
+        return renderAndCache(page, needsHtml);
+    }
+
+    private RenderedPage renderAndCache(Page page, boolean needsHtml) {
+        String key = "page:" + page.path();
+        long sourceBytes = cache.isEnabled() ? page.content().getBytes(StandardCharsets.UTF_8).length : 0;
+        // Do not retain arbitrary missing URLs, or render oversized drafts just to read their metadata.
+        boolean candidate = (page.version() >= 0 || page.path().equals("/")) && cache.canCache(key, sourceBytes);
+        String html = candidate || needsHtml
+                ? metrics.timer("wiki.markdown.render").record(() -> markdown.render(page.content())) : null;
+        var rendered = new RenderedPage(page, html);
+        if (candidate) cache.put(key, rendered, sourceBytes + html.getBytes(StandardCharsets.UTF_8).length);
+        return rendered;
+    }
+
+    /** Restore replaces both the database and attachments while holding the page write monitor. */
+    public synchronized void resetCache() {
+        cache.clear();
+        if (cache.isEnabled()) getPage("/");
+    }
+
+    public record RenderedPage(Page page, String html) {}
 
     public void savePage(String path, String content, String password, long expectedVersion) {
         commit(preparePage(path, content, password, expectedVersion));
@@ -77,8 +115,8 @@ public class PageService {
     private void commit(Page updated) {
         synchronized (this) {
             if (!metrics.timer("wiki.database.write").record(() -> repository.save(updated, updated.version()))) conflict();
+            saved(updated);
         }
-        saved(updated);
     }
 
     /** Authenticate and validate before staging files; recheck the version during the atomic write. */
@@ -119,7 +157,9 @@ public class PageService {
         if (!repository.save(connection, prepared, prepared.version())) conflict();
     }
 
-    public void saved(Page page) {
+    public synchronized void saved(Page page) {
+        cache.remove("page:" + page.path());
+        renderAndCache(new Page(page.path(), page.content(), page.passwordHash(), page.version() + 1), false);
         metrics.counter("wiki.saves", "result", "success").increment();
         LOG.info("Page saved: version={}, characters={}, protected={}", page.version() + 1,
                 page.content().length(), masterHash != null || page.isProtected());

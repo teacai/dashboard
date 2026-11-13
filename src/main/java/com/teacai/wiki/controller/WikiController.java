@@ -4,9 +4,7 @@ import com.teacai.wiki.config.WikiProperties;
 import com.teacai.wiki.model.Page;
 import com.teacai.wiki.service.CsrfService;
 import com.teacai.wiki.service.FileService;
-import com.teacai.wiki.service.MarkdownRenderer;
 import com.teacai.wiki.service.PageService;
-import io.micrometer.core.instrument.MeterRegistry;
 import io.micronaut.http.*;
 import io.micronaut.http.annotation.*;
 import io.micronaut.http.exceptions.HttpStatusException;
@@ -26,19 +24,14 @@ import java.util.Map;
 @ExecuteOn(TaskExecutors.BLOCKING)
 public class WikiController {
     private final PageService pages;
-    private final MarkdownRenderer markdown;
     private final WikiProperties properties;
     private final CsrfService csrf;
-    private final MeterRegistry metrics;
     private final FileService files;
 
-    public WikiController(PageService pages, MarkdownRenderer markdown, WikiProperties properties,
-                          CsrfService csrf, MeterRegistry metrics, FileService files) {
+    public WikiController(PageService pages, WikiProperties properties, CsrfService csrf, FileService files) {
         this.pages = pages;
-        this.markdown = markdown;
         this.properties = properties;
         this.csrf = csrf;
-        this.metrics = metrics;
         this.files = files;
     }
 
@@ -50,7 +43,8 @@ public class WikiController {
         boolean markdownDownload = PagePaths.isMarkdown(path);
         path = PagePaths.htmlPage(path);
         if (PagePaths.isEditor(path)) throw new HttpStatusException(HttpStatus.NOT_FOUND, "Reserved editor path");
-        Page page = pages.getPage(path);
+        PageService.RenderedPage rendered = !editor && !markdownDownload ? pages.getRenderedPage(path) : null;
+        Page page = rendered == null ? pages.getPage(path) : rendered.page();
         if (editor) return editor(request, page, null, HttpStatus.OK);
         if (markdownDownload) {
             byte[] content = page.content().getBytes(StandardCharsets.UTF_8);
@@ -59,7 +53,7 @@ public class WikiController {
                     .attach(PagePaths.markdownFilename(path))).contentType(type);
         }
         Map<String, Object> model = model(page, false);
-        model.put("html", metrics.timer("wiki.markdown.render").record(() -> markdown.render(page.content())));
+        model.put("html", rendered.html());
         return HttpResponse.ok(new ModelAndView<>("page", model));
     }
 

@@ -28,7 +28,8 @@ public class RequestAdmission implements ApplicationEventListener<HttpRequestTer
     @RequestFilter
     @Nullable
     public HttpResponse<?> admit(HttpRequest<?> request) {
-        if (request.getPath().equals("/_assets/style.css") || request.getPath().equals("/_assets/editor.js")) return null;
+        if (request.getPath().equals("/_assets/style.css") || request.getPath().equals("/_assets/editor.js")
+                || request.getPath().equals("/favicon.ico")) return null;
         if (!slots.tryAcquire()) {
             metrics.counter("wiki.requests.rejected").increment();
             return HttpResponse.status(HttpStatus.SERVICE_UNAVAILABLE).header("Retry-After", "1");

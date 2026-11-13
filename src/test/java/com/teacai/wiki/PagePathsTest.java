@@ -27,7 +27,7 @@ class PagePathsTest {
         assertEquals("/notes/", PagePaths.htmlPage("/notes/.md"));
         assertEquals("/a%2Fb", PagePaths.htmlPage("/a%2Fb.md"));
         assertEquals("/notes.md/child", PagePaths.htmlPage("/notes.md/child"));
-        for (String path : new String[]{"/_admin.md", "/_backup.md", "/_assets.md", "/_files.md", "/...md"}) {
+        for (String path : new String[]{"/_admin.md", "/_backup.md", "/_assets.md", "/_files.md", "/favicon.ico.md", "/...md"}) {
             assertThrows(HttpStatusException.class, () -> PagePaths.htmlPage(path), path);
         }
     }
@@ -49,7 +49,8 @@ class PagePathsTest {
 
     @Test void rejectsControlCharactersDotSegmentsAndApplicationNamespaces() {
         for (String path : new String[]{"/a/%00", "/a/%0A", "/a/%7f", "/a/%2e%2e", "/_assets/anything",
-                "/_admin", "/_admin/editor", "/_backup", "/_backup/editor", "/_%62ackup"}) {
+                "/_admin", "/_admin/editor", "/_backup", "/_backup/editor", "/_%62ackup",
+                "/favicon.ico", "/favicon.ico/editor", "/%66avicon.ico"}) {
             assertThrows(HttpStatusException.class, () -> PagePaths.canonical(URI.create(path)));
         }
     }

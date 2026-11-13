@@ -4,7 +4,25 @@ import io.micronaut.context.annotation.ConfigurationProperties;
 
 @ConfigurationProperties("wiki")
 public class WikiProperties {
+    private long cacheMaxFileSizeMb = 1;
+    private long cacheMaxSizeMb = 50;
     private String name = "Wiki";
+
+    public long getCacheMaxFileSizeMb() { return cacheMaxFileSizeMb; }
+    public void setCacheMaxFileSizeMb(long size) {
+        validateCacheSize(size);
+        cacheMaxFileSizeMb = size;
+    }
+    public long getCacheMaxSizeMb() { return cacheMaxSizeMb; }
+    public void setCacheMaxSizeMb(long size) {
+        validateCacheSize(size);
+        cacheMaxSizeMb = size;
+    }
+    private static void validateCacheSize(long size) {
+        if (size < 0 || size > Long.MAX_VALUE / (1024 * 1024)) {
+            throw new IllegalArgumentException("Cache sizes must be non-negative MB values that fit in bytes");
+        }
+    }
     private long maxPageSize = 104857600;
     private String masterPassword = "";
     private boolean secureCookies;

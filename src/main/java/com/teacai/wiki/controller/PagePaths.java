@@ -40,7 +40,8 @@ public final class PagePaths {
             if (segment.equals(".") || segment.equals("..")) throw invalid();
         }
         // Application-owned namespaces must never become user pages.
-        if (result.equals("/_assets") || result.startsWith("/_assets/")
+        if (result.equals("/favicon.ico") || result.startsWith("/favicon.ico/")
+                || result.equals("/_assets") || result.startsWith("/_assets/")
                 || result.equals("/_files") || result.startsWith("/_files/")
                 || result.equals("/_admin") || result.startsWith("/_admin/")
                 || result.equals("/_backup") || result.startsWith("/_backup/")) {

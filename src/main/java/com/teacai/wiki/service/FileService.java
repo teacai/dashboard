@@ -13,6 +13,7 @@ import jakarta.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -30,14 +31,16 @@ public class FileService {
     private final AttachmentStorage storage;
     private final WikiProperties properties;
     private final MeterRegistry metrics;
+    private final ContentCache cache;
 
     public FileService(PageService pages, FileRepository repository, AttachmentStorage storage,
-                       WikiProperties properties, MeterRegistry metrics) {
+                       WikiProperties properties, MeterRegistry metrics, ContentCache cache) {
         this.pages = pages;
         this.repository = repository;
         this.storage = storage;
         this.properties = properties;
         this.metrics = metrics;
+        this.cache = cache;
     }
 
     public List<PageFile> list(String path) { return repository.list(path); }
@@ -61,8 +64,9 @@ public class FileService {
                     });
                     batch.commit();
                 }
+                for (PageFile file : planned) cache.remove("file:" + file.publicId());
+                pages.saved(prepared);
             }
-            pages.saved(prepared);
             long bytes = sources.stream().mapToLong(AttachmentStorage.Source::size).sum();
             metrics.counter("wiki.files.uploaded").increment(planned.size());
             metrics.counter("wiki.files.bytes").increment(bytes);
@@ -129,6 +133,7 @@ public class FileService {
                 });
                 batch.commit();
             }
+            cache.remove("file:" + id);
             pages.saved(prepared);
             metrics.counter("wiki.files.deleted").increment();
             LOG.info("File deleted");
@@ -138,10 +143,28 @@ public class FileService {
 
     public StreamedFile download(UUID id) throws IOException {
         synchronized (pages) {
+            String key = "file:" + id;
+            CachedFile cached = cache.get(key, CachedFile.class);
+            if (cached != null) return cached.stream();
             PageFile file = repository.find(id)
                     .orElseThrow(() -> new HttpStatusException(HttpStatus.NOT_FOUND, "File not found"));
+            if (file.sizeBytes() < Integer.MAX_VALUE && cache.canCache(key, file.sizeBytes())) {
+                byte[] bytes;
+                try (var input = storage.open(file)) { bytes = input.readNBytes((int) file.sizeBytes() + 1); }
+                if (bytes.length != file.sizeBytes()) throw new IOException("Attachment size changed on disk");
+                cached = new CachedFile(file, bytes);
+                cache.put(key, cached, bytes.length);
+                return cached.stream();
+            }
             return new StreamedFile(storage.open(file), MediaType.APPLICATION_OCTET_STREAM_TYPE,
                     -1, file.sizeBytes()).attach(file.filename());
+        }
+    }
+
+    private record CachedFile(PageFile file, byte[] bytes) {
+        StreamedFile stream() {
+            return new StreamedFile(new ByteArrayInputStream(bytes), MediaType.APPLICATION_OCTET_STREAM_TYPE,
+                    -1, bytes.length).attach(file.filename());
         }
     }
 

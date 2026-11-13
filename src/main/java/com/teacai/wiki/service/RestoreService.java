@@ -73,7 +73,10 @@ public class RestoreService {
                 }
                 LOG.info("Restore archive validated; waiting for active requests to finish");
                 try (var exclusive = maintenance.exclusive()) {
-                    synchronized (pages) { replace(contents, layout); }
+                    synchronized (pages) {
+                        replace(contents, layout);
+                        pages.resetCache();
+                    }
                 }
                 metrics.counter("wiki.restores", "result", "success").increment();
                 LOG.info("Backup restored successfully");
