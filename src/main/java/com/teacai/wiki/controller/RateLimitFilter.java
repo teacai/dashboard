@@ -1,6 +1,7 @@
 package com.teacai.wiki.controller;
 
 import com.teacai.wiki.service.IpRateLimiter;
+import com.teacai.wiki.service.RateLimitClientIp;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micronaut.core.annotation.Nullable;
@@ -18,10 +19,12 @@ import io.micronaut.http.server.annotation.PreMatching;
 @ServerFilter("/**")
 public class RateLimitFilter {
     private final IpRateLimiter limiter;
+    private final RateLimitClientIp clientIp;
     private final Counter rejected;
 
-    public RateLimitFilter(IpRateLimiter limiter, MeterRegistry metrics) {
+    public RateLimitFilter(IpRateLimiter limiter, RateLimitClientIp clientIp, MeterRegistry metrics) {
         this.limiter = limiter;
+        this.clientIp = clientIp;
         rejected = metrics.counter("wiki.requests.rate_limited");
         metrics.gauge("wiki.rate_limit.tracked_ips", limiter, IpRateLimiter::trackedIpCount);
     }
@@ -30,10 +33,7 @@ public class RateLimitFilter {
     @RequestFilter
     @Nullable
     public HttpResponse<?> admit(HttpRequest<?> request) {
-        // Forwarded/X-Forwarded-For are client-controlled unless a trusted proxy validates them.
-        var remote = request.getRemoteAddress();
-        String ip = remote.getAddress() == null ? remote.getHostString() : remote.getAddress().getHostAddress();
-        var decision = limiter.acquire(ip);
+        var decision = limiter.acquire(clientIp.resolve(request));
         if (decision.allowed()) return null;
         rejected.increment();
         return HttpResponse.status(HttpStatus.TOO_MANY_REQUESTS)

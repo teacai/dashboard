@@ -43,6 +43,8 @@ flyway:
 wiki:
   rate-limit:
     requests-per-minute: ${WIKI_RATE_LIMIT_REQUESTS_PER_MINUTE:60}
+    # Enable only behind a trusted proxy that sanitizes forwarding headers.
+    trust-forwarded-headers: ${WIKI_RATE_LIMIT_TRUST_FORWARDED_HEADERS:false}
   name: ${WIKI_NAME:Wiki}
   max-page-size: ${WIKI_MAX_PAGE_SIZE:104857600}
   data-directory: ${WIKI_DATA_DIRECTORY:./data}

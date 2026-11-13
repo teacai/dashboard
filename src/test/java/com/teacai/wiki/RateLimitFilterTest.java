@@ -3,6 +3,7 @@ package com.teacai.wiki;
 import com.teacai.wiki.config.RateLimitProperties;
 import com.teacai.wiki.controller.RateLimitFilter;
 import com.teacai.wiki.service.IpRateLimiter;
+import com.teacai.wiki.service.RateLimitClientIp;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micronaut.http.HttpRequest;
 import io.micronaut.http.HttpRequestWrapper;
@@ -26,7 +27,8 @@ class RateLimitFilterTest {
         properties.setRequestsPerMinute(1);
         var metrics = new SimpleMeterRegistry();
         try {
-            var filter = new RateLimitFilter(new IpRateLimiter(properties), metrics);
+            assertFalse(properties.isTrustForwardedHeaders());
+            var filter = new RateLimitFilter(new IpRateLimiter(properties), new RateLimitClientIp(properties), metrics);
             assertNull(filter.admit(request("192.0.2.1", 1000)));
             var rejection = filter.admit(request("192.0.2.1", 2000));
             assertNotNull(rejection);

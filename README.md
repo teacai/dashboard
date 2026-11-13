@@ -90,6 +90,7 @@ See [`src/main/resources/application.yml`](src/main/resources/application.yml). 
 | --- | --- | --- |
 | `WIKI_PORT` | `8080` | HTTP port |
 | `WIKI_RATE_LIMIT_REQUESTS_PER_MINUTE` | `60` | Positive per-IP request limit (`wiki.rate-limit.requests-per-minute`), shared across all methods and paths |
+| `WIKI_RATE_LIMIT_TRUST_FORWARDED_HEADERS` | `false` | Trust proxy-supplied client IPs for rate limiting (`wiki.rate-limit.trust-forwarded-headers`); enable only behind a sanitizing, trusted reverse proxy |
 | `WIKI_NAME` | `Wiki` | Escaped application name in the navbar |
 | `WIKI_DB_URL` | `jdbc:h2:file:./data/wiki;DB_CLOSE_ON_EXIT=FALSE;CACHE_SIZE=8192` | Embedded H2 JDBC URL |
 | `WIKI_DB_PASSWORD` | empty | H2 connection password; not a page password or file-encryption key |
@@ -117,11 +118,16 @@ Configure the positive request count in `application.yml` (default **60**), or s
 wiki:
   rate-limit:
     requests-per-minute: 60
+    trust-forwarded-headers: false
 ```
 
 Each IP has a fixed 60-second window beginning with its first request. Rejected requests do not extend that window. Counters are atomic under concurrent requests; expired entries are removed every minute. State belongs to this application instance only and resets on restart; multiple instances do not share a budget. Fixed windows can permit bursts at window boundaries, so retain upstream limits for hostile traffic.
 
-The key is the TCP connection's IP address (IPv4 or IPv6), not its source port. `Forwarded` and `X-Forwarded-For` headers are deliberately ignored to prevent spoofing. Clients behind a reverse proxy or NAT therefore share that connection IP's budget; use per-client rate limiting at the trusted proxy and tune the application limit accordingly. Health checks and browser asset requests also consume the budget.
+By default, the key is the TCP connection's IP address (IPv4 or IPv6), not its source port. `Forwarded` and `X-Forwarded-For` headers are ignored to prevent spoofing, so clients behind a reverse proxy or NAT share the connection IP's budget. Health checks and browser asset requests also consume the budget.
+
+Behind a **trusted reverse proxy**, set `wiki.rate-limit.trust-forwarded-headers: true` or `WIKI_RATE_LIMIT_TRUST_FORWARDED_HEADERS=true` to track the forwarded client IP instead. The first `for` address in `Forwarded` takes precedence; when that header is absent, the first (leftmost) IP in `X-Forwarded-For` is used. IPv4/IPv6 literals are normalized and optional ports are excluded from the key. Missing, invalid, `unknown`, or obfuscated client addresses fall back to the connection IP, without DNS lookups. An invalid preferred header does not fall through to another header or a later proxy address.
+
+**Enabling this option trusts forwarding headers from every connection.** Keep the application port private and ensure the proxy removes/overwrites untrusted incoming headers (both header types, including any client-supplied chain). Otherwise a client could forge IPs to bypass the rate limit. No trusted-proxy allowlist is inferred from this boolean setting.
 
 ### File uploads and management
 
@@ -329,7 +335,7 @@ Micrometer publishes metrics to the **local JVM's JMX MBean server** (domain `me
 
 Tests cover root/blank pages; nested, encoded, repeated- and trailing-slash paths; escaped textarea round-trips including leading newlines; create/update/protection; master precedence; invalid CSRF; malicious HTML; UTF-8 byte boundaries; forms exceeding framework default buffers; stale edits; upload admission/disconnection cleanup; and file-database restart persistence. Backup/restore tests additionally verify default/custom administrator authentication, the authenticated admin page, browser-navigation downloads, dated filenames, nested/Unicode files, empty directories, raw/multipart HTTP restores, CSRF/confirmation enforcement for browser restores, Post/Redirect/Get, escaped error/view output, complete data replacement, live-database restoration with attachment metadata, real V1/V2 backup upgrades and restart persistence, rejection of newer schemas (including numeric/dotted versions), failed migration isolation, modified-history rejection, rollback after an installed-database read failure, symlink/traversal/size-limit rejection, incomplete-configuration rejection, and maintenance admission/draining. Tests use isolated in-memory/temporary file databases, never `./data/wiki`.
 
-Rate-limit tests verify configuration/defaults, independent IPv4/IPv6 budgets, concurrent requests, exact window expiry, rounded retry delays, idle cleanup, spoofed forwarding headers, and real HTTP rejection across methods and paths. Other functional/browser tests raise the limit to avoid consuming their shared loopback budget.
+Rate-limit tests verify configuration/defaults, independent IPv4/IPv6 budgets, concurrent requests, exact window expiry, rounded retry delays, idle cleanup, spoofed forwarding headers ignored by default, trusted forwarding-header precedence/chains, address normalization and fallback, and real HTTP rejection across methods and paths. Other functional/browser tests raise the limit to avoid consuming their shared loopback budget.
 
 #### Playwright end-to-end test
 
