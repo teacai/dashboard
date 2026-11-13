@@ -75,6 +75,99 @@ test('upload files saves the draft, replaces original names, downloads and delet
     await expect(editor).toHaveValue('Unsaved draft during deletion');
 });
 
+test('file insert buttons add escaped Markdown at the cursor without saving and restore editor focus', async ({ page }) => {
+    const slug = `/e2e/${randomUUID()}/insert-files`;
+    const filename = '日本 [one]_*<tag>.txt';
+    await page.goto(slug + '.md/editor');
+    const editor = page.getByRole('textbox', { name: 'Page Markdown', exact: true });
+    expect((await pickFiles(page, [{ name: filename, mimeType: 'text/plain', buffer: Buffer.from('attachment') }])).status()).toBe(303);
+    // The upload replaces the editor and dialog contents; insertion must use the new elements.
+    await expect(editor).toHaveValue(/日本/);
+    const stored = await (await page.request.get(slug + '.md')).text();
+    await page.getByRole('button', { name: 'Manage files', exact: true }).click();
+    const manager = page.getByRole('dialog');
+    const url = await manager.getByRole('link', { name: filename, exact: true }).getAttribute('href');
+    const link = '[日本 \\[one\\]\\_\\*\\<tag\\>\\.txt](' + url + ')';
+    const insert = manager.getByRole('button', { name: 'Insert ' + filename, exact: true });
+    const remove = manager.getByRole('button', { name: 'Delete ' + filename, exact: true });
+    await expect(insert).toHaveAttribute('type', 'button');
+    expect((await insert.textContent()).trim()).toBe('');
+    for (const width of [320, 1280]) {
+        await page.setViewportSize({ width, height: 720 });
+        const left = await insert.boundingBox();
+        const right = await remove.boundingBox();
+        expect(left.x + left.width).toBeLessThanOrEqual(right.x);
+        expect(right.x + right.width).toBeLessThanOrEqual(width);
+    }
+    await manager.getByRole('button', { name: 'Close files', exact: true }).click();
+
+    const cases = [
+        { draft: 'Before after', start: 7, end: 7 },
+        { draft: 'First', start: 0, end: 0 },
+        { draft: 'Last', start: 4, end: 4 },
+        { draft: '', start: 0, end: 0 },
+        { draft: 'Replace this text', start: 8, end: 12 }
+    ];
+    for (const [index, { draft, start, end }] of cases.entries()) {
+        await editor.fill(draft);
+        await editor.evaluate((element, range) => element.setSelectionRange(...range), [start, end]);
+        await page.getByRole('button', { name: 'Manage files', exact: true }).click();
+        if (index === 0) {
+            // Click the icon itself, not just the surrounding button.
+            await insert.locator('svg').click();
+        } else {
+            await insert.focus();
+            await insert.press('Enter');
+        }
+        await expect(manager).not.toBeVisible();
+        await expect(editor).toBeFocused();
+        await expect(editor).toHaveValue(draft.slice(0, start) + link + draft.slice(end));
+        expect(await editor.evaluate(element => element.selectionStart)).toBe(start + link.length);
+        await editor.press('!');
+        await expect(editor).toHaveValue(draft.slice(0, start) + link + '!' + draft.slice(end));
+        expect(await (await page.request.get(slug + '.md')).text()).toBe(stored);
+    }
+    await page.getByRole('button', { name: 'Save page', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(slug + '$'));
+    await expect(page.getByRole('main').getByRole('link', { name: filename, exact: true })).toHaveAttribute('href', url);
+});
+
+test('file insertion appends the link when cursor lookup or range insertion is unavailable', async ({ page }) => {
+    const slug = `/e2e/${randomUUID()}/insert-fallback`;
+    await page.goto(slug + '/editor');
+    const editor = page.getByRole('textbox', { name: 'Page Markdown', exact: true });
+    expect((await pickFiles(page, [{ name: 'file.txt', mimeType: 'text/plain', buffer: Buffer.from('attachment') }])).status()).toBe(303);
+    await expect(editor).toHaveValue(/file/);
+    for (const failure of ['missing', 'throws', 'range']) {
+        await editor.fill('Preserve the draft');
+        await editor.evaluate((element, failure) => {
+            element.setSelectionRange(0, 0);
+            if (failure === 'range') {
+                element.setRangeText = () => { throw new Error('Range insertion unavailable'); };
+            } else {
+                Object.defineProperty(element, 'selectionStart', {
+                    configurable: true,
+                    get() {
+                        if (failure === 'throws') throw new Error('Cursor unavailable');
+                        return null;
+                    }
+                });
+            }
+        }, failure);
+        await page.getByRole('button', { name: 'Manage files', exact: true }).click();
+        const manager = page.getByRole('dialog');
+        const url = await manager.getByRole('link', { name: 'file.txt', exact: true }).getAttribute('href');
+        await manager.getByRole('button', { name: 'Insert file.txt', exact: true }).click();
+        await expect(manager).not.toBeVisible();
+        await expect(editor).toBeFocused();
+        await expect(editor).toHaveValue('Preserve the draft[file\\.txt](' + url + ')');
+        await editor.evaluate(element => {
+            delete element.selectionStart;
+            delete element.setRangeText;
+        });
+    }
+});
+
 test('directory picker mirrors selected folder structure and leaves the user editing', async ({ page, baseURL }) => {
     const directory = await mkdtemp(path.join(tmpdir(), 'wiki-folder-upload-'));
     const folder = path.join(directory, 'selected-folder');

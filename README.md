@@ -2,7 +2,15 @@
 
 A small, server-rendered Markdown wiki. Visit any page path; missing pages, including `/`, display a blank page. Click the pencil to edit, then the floppy disk to save. No accounts, frontend build, external database, or H2 console. Reading and ordinary Markdown editing work without JavaScript; a small local editor script enables file/folder pickers and file management.
 
+Pages automatically follow the browser's light or dark theme preference, including live preference changes, without JavaScript. Light styling is the fallback when no preference is supplied.
+
 Pages adapt to narrow and landscape screens. Rendered Markdown wraps long text, scales images, and scrolls wide code blocks/tables locally rather than widening the page. The editor stays within the viewport with its controls visible; only the textarea scrolls as the draft grows. Long application names are truncated in the navbar.
+
+### Emoji shortcodes
+
+Markdown text supports the Unicode emoji shortcodes in [this cheat sheet](https://gist.github.com/rxaviers/7360908), including aliases such as `:smile:` → 😄, `:heart:` → ❤️, `:+1:` → 👍, and `:rocket:` → 🚀. Replacement happens only when rendering HTML: stored Markdown, editor drafts, inline/fenced/indented code, and link/image URLs and titles are unchanged. Unknown shortcodes remain literal. Emoji data is bundled locally; no external requests or image downloads are needed.
+
+All 853 Unicode-backed names are supported, including historical aliases, flags, and multi-codepoint sequences. The list's 15 GitHub-only images (for example `:octocat:`, `:trollface:`, and `:shipit:`) have no Unicode equivalent and remain literal. See [the bundled data notes](src/main/resources/emoji/README.md) for the full exception list and attribution.
 
 ## Run
 
@@ -106,7 +114,7 @@ In the editor, enter the edit password if required, click the **upload icon**, a
 - Selecting a folder `photos` containing `trip/image.jpg` stores `data/files/notes/project/photos/trip/image.jpg`. The selected top-level folder is included; empty directories are not uploaded.
 - Root-page uploads go directly under the configured attachment root. Canonical percent-encoded page segments stay encoded on disk (`/a%2Fb` is not `/a/b`); empty/repeated/trailing page-path segments use a reserved `%00` directory to remain distinct.
 - Existing files at the same relative path **owned by the same page** are replaced. Their public download URLs remain unchanged. Cross-page physical path collisions, duplicate paths within a batch, and collisions with unmanaged files are rejected rather than overwritten.
-- Click the **folder icon** to list this page's files, download them, or delete individual files. Deletion requires the edit password, CSRF token, and current page version. It preserves the open draft without publishing it and does not remove Markdown links; remove stale links manually. Deletion advances the page version to invalidate older editors/uploads.
+- Click the **folder icon** to list this page's files, download them, insert links, or delete individual files. Each file's **insert link icon**, to the left of Delete, inserts an escaped Markdown link at the editor cursor (replacing selected text), or appends it if the cursor position is unavailable. The file window closes and focus returns to the editor; insertion changes only the draft until you save. Deletion requires the edit password, CSRF token, and current page version. It preserves the open draft without publishing it and does not remove Markdown links; remove stale links manually. Deletion advances the page version to invalidate older editors/uploads.
 - Each file and the combined file data in a request are limited to **2 GiB (2,147,483,648 bytes)**. There are at most 1,000 files per batch and 1 MiB of manifest metadata. The page-content limit applies separately. Files are spooled to disk, then copied in bounded chunks; no multi-gigabyte byte arrays are created.
 - Relative filenames are limited to 4,096 characters and individual path segments to 255 UTF-8 bytes, also subject to the host filesystem's limits. Absolute paths, dot segments, empty segments, backslashes, colons, control characters, and symlink targets/ancestors are rejected. Validated original filenames are never silently renamed.
 - Downloads use stable UUIDv7 URLs, `application/octet-stream`, `Content-Disposition: attachment` with the original filename, `nosniff`, and a sandbox CSP. Uploaded HTML/SVG/scripts are never served as active same-origin documents.
@@ -118,13 +126,14 @@ Provide sufficient temporary-disk capacity: Micronaut's multipart spool uses the
 ### URL behavior
 
 - `GET /anything/nested` displays the page, or a blank page without inserting a database row.
-- `GET /anything/nested/editor` displays the full-page editor.
-- `POST /anything/nested` saves a URL-encoded form and returns **303** to the page (Post/Redirect/Get).
-- `/editor` edits `/`; posting to `/` saves the root page.
+- `GET /anything/nested.md` downloads the exact stored Markdown for `/anything/nested` as `text/markdown; charset=UTF-8`, with an attachment filename of `nested.md`. The final URL slug is used for the filename (percent-encoded slugs stay encoded). Missing pages return an empty Markdown file without creating a page.
+- `GET /anything/nested/editor` displays the full-page editor. `/anything/nested.md/editor` edits the same page, with the same passwords, version checks, and file management. Saving redirects to the normal HTML URL `/anything/nested`, not the Markdown download.
+- `POST /anything/nested` saves a URL-encoded form and returns **303** to the page (Post/Redirect/Get). Posting directly to `/anything/nested.md` also saves the same page and redirects to its HTML URL.
+- `/editor` edits `/`; posting to `/` saves the root page. `/.md` downloads the root as `index.md`; `/.md/editor` edits the root. For a trailing-slash page `/notes/`, `/notes/.md` downloads `notes.md`.
 - `POST /_files/upload` accepts indexed multipart files and a relative-path manifest; `POST /_files/delete` deletes an owned file; `GET /_files/{uuid}` downloads a file.
 - `GET /_backup` downloads a ZIP of the data directory, including a consistent live database snapshot; `POST /_backup` restores a raw ZIP or a multipart `file` field. Both require administrator Basic authentication (see below).
 - `GET /_admin` displays the authenticated administration page; `POST /_admin/restore` restores a multipart archive with a CSRF token and explicit confirmation.
-- `/_backup`, the final `/editor` suffix and `/_assets` / `/_files` / `/_admin` namespaces are reserved. Paths ending in `/editor` cannot themselves be content pages.
+- `/_backup`, terminal `.md` representation suffixes, the final `/editor` suffix and `/_assets` / `/_files` / `/_admin` namespaces are reserved. Repeated terminal `.md` suffixes resolve to the same HTML page rather than creating separate pages. Paths ending in `/editor` cannot themselves be content pages.
 - Slashes inside paths, repeated slashes, trailing slashes, Unicode, spaces, and escaped reserved characters are supported. `/a`, `/a/`, `/a/b`, and `/a%2Fb` are distinct pages. Literal reserved delimiters must be percent-encoded where appropriate: `%23` for `#`, `%3F` for `?`.
 - Percent escape hex is canonicalized to uppercase; escaped unreserved characters are decoded. For example `/a%7Eb` and `/a~b` refer to the same page. Encoded slashes are **not** decoded into path separators.
 - Queries do not identify a page; fragments never reach the server. Dot segments, control characters, and backslashes are rejected. Browsers can normalize dot segments before sending a request.

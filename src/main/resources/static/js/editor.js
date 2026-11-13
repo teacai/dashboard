@@ -59,6 +59,26 @@ for (const [button, picker] of [['choose-files', 'file-picker'], ['choose-folder
 document.getElementById('manage-files').addEventListener('click', () => dialog.showModal());
 dialog.addEventListener('click', event => {
     if (event.target.closest('#close-files')) dialog.close();
+    const insert = event.target.closest('.insert-file');
+    if (!insert || uploading) return;
+    const file = insert.closest('li').querySelector('a');
+    // Escape ASCII punctuation, as in the links appended by the upload service.
+    const label = file.textContent.replace(/[\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]/g, '\\$&');
+    const link = `[${label}](${file.getAttribute('href')})`;
+    const textarea = editor.querySelector('textarea');
+    try {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start || end > textarea.value.length) {
+            throw new Error('Cursor position unavailable');
+        }
+        textarea.setRangeText(link, start, end, 'end');
+    } catch {
+        textarea.value += link;
+    }
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    dialog.close();
+    textarea.focus();
 });
 document.addEventListener('submit', event => {
     if (event.target.id === 'editor' && event.submitter?.classList.contains('delete-file') && !window.confirm('Delete this file? Existing Markdown links will stop working.')) {

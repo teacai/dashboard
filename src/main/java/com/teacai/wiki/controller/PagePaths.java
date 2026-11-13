@@ -32,7 +32,9 @@ public final class PagePaths {
             }
         }
         String result = path.toString();
-        int maxLength = 16000 + (isEditor(result) ? "/editor".length() : 0);
+        String pagePath = isEditor(result) ? page(result) : result;
+        int maxLength = 16000 + (isEditor(result) ? "/editor".length() : 0)
+                + (isMarkdown(pagePath) ? ".md".length() : 0);
         if (!result.startsWith("/") || result.length() > maxLength) throw invalid();
         for (String segment : result.split("/", -1)) {
             if (segment.equals(".") || segment.equals("..")) throw invalid();
@@ -54,6 +56,23 @@ public final class PagePaths {
     public static String page(String editor) {
         String page = editor.substring(0, editor.length() - "/editor".length());
         return page.isEmpty() ? "/" : page;
+    }
+
+    public static boolean isMarkdown(String path) { return path.endsWith(".md"); }
+
+    /** Resolve a canonical path: Markdown URLs are representations, not separate stored pages. */
+    public static String htmlPage(String path) {
+        int end = path.length();
+        while (end >= 3 && path.startsWith(".md", end - 3)) end -= 3;
+        if (end == path.length()) return path;
+        // Validate again: removing a suffix can expose a reserved namespace or dot segment.
+        return canonical(URI.create("http://wiki.invalid" + path.substring(0, end)));
+    }
+
+    public static String markdownFilename(String path) {
+        String slugPath = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
+        String slug = slugPath.substring(slugPath.lastIndexOf('/') + 1);
+        return (slug.isEmpty() ? "index" : slug) + ".md";
     }
 
     private static boolean isUnreserved(char c) {

@@ -71,6 +71,17 @@ class AttachmentHttpTest {
         }
         var editor = Jsoup.parse(http.get(page + "/editor").body());
         assertEquals(3, editor.select(".file-list li").size());
+        for (var row : editor.select(".file-list li")) {
+            var insert = row.selectFirst("button.insert-file");
+            assertNotNull(insert);
+            assertEquals("button", insert.attr("type"));
+            assertEquals("Insert " + row.selectFirst("a").text(), insert.attr("aria-label"));
+            assertEquals("Insert file link", insert.attr("title"));
+            assertTrue(insert.text().isEmpty());
+            assertNotNull(insert.selectFirst("svg[aria-hidden=true]"));
+            assertEquals("button", insert.nextElementSibling().tagName());
+            assertTrue(insert.nextElementSibling().hasClass("delete-file"));
+        }
         assertEquals(content, editor.selectFirst("textarea").wholeText());
     }
 

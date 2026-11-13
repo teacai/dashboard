@@ -10,11 +10,15 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micronaut.http.*;
 import io.micronaut.http.annotation.*;
 import io.micronaut.http.exceptions.HttpStatusException;
+import io.micronaut.http.server.types.files.StreamedFile;
 import io.micronaut.scheduling.TaskExecutors;
 import io.micronaut.scheduling.annotation.ExecuteOn;
+import io.micronaut.views.ModelAndView;
 import io.micronaut.views.View;
 
+import java.io.ByteArrayInputStream;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -38,25 +42,32 @@ public class WikiController {
         this.files = files;
     }
 
-    @Get(uris = {"/", "/{+path}"}, produces = MediaType.TEXT_HTML)
-    @View("page")
+    @Get(uris = {"/", "/{+path}"}, produces = {MediaType.TEXT_HTML, "text/markdown"})
     public HttpResponse<?> get(HttpRequest<?> request) {
         String path = PagePaths.canonical(request.getUri());
         boolean editor = PagePaths.isEditor(path);
         if (editor) path = PagePaths.page(path);
+        boolean markdownDownload = PagePaths.isMarkdown(path);
+        path = PagePaths.htmlPage(path);
         if (PagePaths.isEditor(path)) throw new HttpStatusException(HttpStatus.NOT_FOUND, "Reserved editor path");
         Page page = pages.getPage(path);
         if (editor) return editor(request, page, null, HttpStatus.OK);
+        if (markdownDownload) {
+            byte[] content = page.content().getBytes(StandardCharsets.UTF_8);
+            var type = MediaType.of("text/markdown; charset=UTF-8");
+            return HttpResponse.ok(new StreamedFile(new ByteArrayInputStream(content), type, -1, content.length)
+                    .attach(PagePaths.markdownFilename(path))).contentType(type);
+        }
         Map<String, Object> model = model(page, false);
         model.put("html", metrics.timer("wiki.markdown.render").record(() -> markdown.render(page.content())));
-        return HttpResponse.ok(model);
+        return HttpResponse.ok(new ModelAndView<>("page", model));
     }
 
     @Post(uris = {"/", "/{+path}"}, consumes = MediaType.APPLICATION_FORM_URLENCODED,
             produces = MediaType.TEXT_HTML)
     @View("page")
     public HttpResponse<?> save(HttpRequest<?> request, @Body Map<String, String> form) {
-        String path = PagePaths.canonical(request.getUri());
+        String path = PagePaths.htmlPage(PagePaths.canonical(request.getUri()));
         if (PagePaths.isEditor(path)) throw new HttpStatusException(HttpStatus.NOT_FOUND, "Reserved editor path");
         csrf.verify(request, form.get("csrf"));
         long version;
@@ -82,7 +93,7 @@ public class WikiController {
         model.put("files", files.list(page.path()));
         model.put("passwordHint", pages.usesMasterPassword() ? "Master password"
                 : error != null ? "Password" : page.isProtected() ? "Page password" : "Set password (optional)");
-        return HttpResponse.status(status).body(model).cookie(csrf.cookie(request, token));
+        return HttpResponse.status(status).body(new ModelAndView<>("page", model)).cookie(csrf.cookie(request, token));
     }
 
     private Map<String, Object> model(Page page, boolean editor) {

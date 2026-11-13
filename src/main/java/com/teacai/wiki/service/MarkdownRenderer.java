@@ -4,6 +4,8 @@ import jakarta.inject.Singleton;
 import org.commonmark.ext.autolink.AutolinkExtension;
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension;
 import org.commonmark.ext.gfm.tables.TablesExtension;
+import org.commonmark.node.AbstractVisitor;
+import org.commonmark.node.Text;
 import org.commonmark.parser.Parser;
 import org.commonmark.renderer.html.HtmlRenderer;
 import org.jsoup.Jsoup;
@@ -31,7 +33,13 @@ public class MarkdownRenderer {
 
     public String render(String markdown) {
         if (markdown == null || markdown.isBlank()) return "";
-        return Jsoup.clean(renderer.render(parser.parse(markdown)), "https://wiki.invalid/", safelist,
+        var document = parser.parse(markdown);
+        document.accept(new AbstractVisitor() {
+            @Override public void visit(Text text) {
+                text.setLiteral(EmojiShortcodes.replace(text.getLiteral()));
+            }
+        });
+        return Jsoup.clean(renderer.render(document), "https://wiki.invalid/", safelist,
                 new Document.OutputSettings().prettyPrint(false)).strip();
     }
 }

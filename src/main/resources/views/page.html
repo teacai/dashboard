@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title th:text="${title}">Wiki</title>
   <link rel="stylesheet" href="/_assets/style.css">
   <script th:if="${editor}" src="/_assets/editor.js" defer></script>
@@ -49,6 +50,9 @@
       <li th:each="file : ${files}">
         <a th:href="${file.url()}" th:text="${file.relativePath()}">File</a>
         <small th:text="${file.sizeBytes()} + ' bytes'"></small>
+        <button type="button" class="icon-button insert-file" th:aria-label="'Insert ' + ${file.relativePath()}" title="Insert file link">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/></svg>
+        </button>
         <button form="editor" type="submit" name="fileId" th:value="${file.publicId()}" formaction="/_files/delete"
                 class="icon-button delete-file" th:aria-label="'Delete ' + ${file.relativePath()}" title="Delete file">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg>
