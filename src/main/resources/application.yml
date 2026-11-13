@@ -41,6 +41,8 @@ flyway:
       enabled: true
 
 wiki:
+  rate-limit:
+    requests-per-minute: ${WIKI_RATE_LIMIT_REQUESTS_PER_MINUTE:60}
   name: ${WIKI_NAME:Wiki}
   max-page-size: ${WIKI_MAX_PAGE_SIZE:104857600}
   data-directory: ${WIKI_DATA_DIRECTORY:./data}

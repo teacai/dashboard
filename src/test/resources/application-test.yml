@@ -2,6 +2,9 @@ micronaut:
   server:
     port: -1
 wiki:
+  # Functional tests share loopback and exercise many requests; rate-limit tests override this.
+  rate-limit:
+    requests-per-minute: 100000
   files-directory: ${java.io.tmpdir}/wiki-test-${random.uuid}
 datasources:
   default:

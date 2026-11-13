@@ -89,6 +89,7 @@ See [`src/main/resources/application.yml`](src/main/resources/application.yml). 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `WIKI_PORT` | `8080` | HTTP port |
+| `WIKI_RATE_LIMIT_REQUESTS_PER_MINUTE` | `60` | Positive per-IP request limit (`wiki.rate-limit.requests-per-minute`), shared across all methods and paths |
 | `WIKI_NAME` | `Wiki` | Escaped application name in the navbar |
 | `WIKI_DB_URL` | `jdbc:h2:file:./data/wiki;DB_CLOSE_ON_EXIT=FALSE;CACHE_SIZE=8192` | Embedded H2 JDBC URL |
 | `WIKI_DB_PASSWORD` | empty | H2 connection password; not a page password or file-encryption key |
@@ -105,6 +106,22 @@ See [`src/main/resources/application.yml`](src/main/resources/application.yml). 
 | `WIKI_SECURE_COOKIES` | `false` | Set `true` behind an HTTPS-terminating proxy; direct HTTPS also sets Secure automatically |
 
 The page limit is checked independently of `Content-Length`, after form decoding, and includes appended attachment links. Over-limit ordinary saves return **413** without saving. Upload errors handled after form parsing preserve the editor draft; parser/transport failures may not. A URL-encoded UTF-8 byte can occupy three wire bytes (`%XX`); if increasing the page limit, increase the buffer cap to at least `3 × page limit + 65536`, and the transport limit to at least the larger of that value and `max upload size + page limit + multipart overhead`. Adjust reverse-proxy limits too. These are byte counts, not character counts.
+
+### Request rate limiting
+
+Every request shares an in-memory per-IP budget, including static assets, editor requests, uploads/downloads, administration, unsupported methods, and requests that fail authentication. The limit runs before route matching, authentication, and request-body binding. Once exhausted, requests receive **429 Too Many Requests** with a `Retry-After` header (whole seconds, rounded up) and `Cache-Control: no-store`.
+
+Configure the positive request count in `application.yml` (default **60**), or set `WIKI_RATE_LIMIT_REQUESTS_PER_MINUTE`:
+
+```yaml
+wiki:
+  rate-limit:
+    requests-per-minute: 60
+```
+
+Each IP has a fixed 60-second window beginning with its first request. Rejected requests do not extend that window. Counters are atomic under concurrent requests; expired entries are removed every minute. State belongs to this application instance only and resets on restart; multiple instances do not share a budget. Fixed windows can permit bursts at window boundaries, so retain upstream limits for hostile traffic.
+
+The key is the TCP connection's IP address (IPv4 or IPv6), not its source port. `Forwarded` and `X-Forwarded-For` headers are deliberately ignored to prevent spoofing. Clients behind a reverse proxy or NAT therefore share that connection IP's budget; use per-client rate limiting at the trusted proxy and tune the application limit accordingly. Health checks and browser asset requests also consume the budget.
 
 ### File uploads and management
 
@@ -294,7 +311,8 @@ Micrometer publishes metrics to the **local JVM's JMX MBean server** (domain `me
 - `wiki.database.read` / `wiki.database.write` timers
 - `wiki.markdown.render` timer
 - `wiki.saves` counters, tagged by bounded result values
-- `wiki.work.active` and `wiki.requests.rejected`
+- `wiki.work.active` and `wiki.requests.rejected` (concurrency admission)
+- `wiki.requests.rate_limited` counter (429 responses) and `wiki.rate_limit.tracked_ips` gauge; IPs are never used as metric tags. The first rejection for each IP/window logs a warning.
 - `wiki.files.upload` timer, `wiki.files.uploaded`, `wiki.files.bytes`, `wiki.files.deleted`, and `wiki.files.failures` counters
 - `wiki.backup.duration` timer and `wiki.backups` counters tagged by `success` / `failure`
 - `wiki.restore.duration` timer and `wiki.restores` counters tagged by `success` / `failure` / `rollback`
@@ -310,6 +328,8 @@ Micrometer publishes metrics to the **local JVM's JMX MBean server** (domain `me
 ```
 
 Tests cover root/blank pages; nested, encoded, repeated- and trailing-slash paths; escaped textarea round-trips including leading newlines; create/update/protection; master precedence; invalid CSRF; malicious HTML; UTF-8 byte boundaries; forms exceeding framework default buffers; stale edits; upload admission/disconnection cleanup; and file-database restart persistence. Backup/restore tests additionally verify default/custom administrator authentication, the authenticated admin page, browser-navigation downloads, dated filenames, nested/Unicode files, empty directories, raw/multipart HTTP restores, CSRF/confirmation enforcement for browser restores, Post/Redirect/Get, escaped error/view output, complete data replacement, live-database restoration with attachment metadata, real V1/V2 backup upgrades and restart persistence, rejection of newer schemas (including numeric/dotted versions), failed migration isolation, modified-history rejection, rollback after an installed-database read failure, symlink/traversal/size-limit rejection, incomplete-configuration rejection, and maintenance admission/draining. Tests use isolated in-memory/temporary file databases, never `./data/wiki`.
+
+Rate-limit tests verify configuration/defaults, independent IPv4/IPv6 budgets, concurrent requests, exact window expiry, rounded retry delays, idle cleanup, spoofed forwarding headers, and real HTTP rejection across methods and paths. Other functional/browser tests raise the limit to avoid consuming their shared loopback budget.
 
 #### Playwright end-to-end test
 

@@ -36,6 +36,7 @@ async function main() {
         env: {
             ...process.env,
             WIKI_NAME: 'Wiki E2E',
+            WIKI_RATE_LIMIT_REQUESTS_PER_MINUTE: '100000',
             WIKI_DB_URL: `jdbc:h2:file:${directory}/wiki`,
             WIKI_DB_PASSWORD: '',
             WIKI_DATA_DIRECTORY: directory,
